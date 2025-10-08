@@ -68,6 +68,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     /**
      * 🍪 Cookie ichidan access_token ni ajratib olish
+     * dsfsgdg
      */
     private String extractTokenFromCookies(HttpServletRequest req) {
         // 1️⃣ Header orqali
