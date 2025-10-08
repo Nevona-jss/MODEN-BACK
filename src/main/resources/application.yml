@@ -1,0 +1,64 @@
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /
+
+spring:
+  config:
+    import: optional:classpath:application-secret.yml
+
+  application:
+    name: moden-api
+
+  datasource:
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASS}
+
+  jpa:
+    database-platform: org.hibernate.dialect.SQLServerDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  output:
+    ansi:
+      enabled: ALWAYS
+
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+  paths-to-match: /**
+
+# ✅ JWT konfiguratsiyasi
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-expiration-ms: 86400000       # 1 kun (24*60*60*1000)
+    refresh-expiration-ms: 2592000000    # 30 kun (30*24*60*60*1000)
+
+# ✅ Security (basic auth test uchun)
+security:
+  user:
+    name: ${ADMIN_USER:admin}
+    password: ${ADMIN_PASS:hyona123}
+  basic:
+    enabled: false
+
+# ✅ Logging
+logging:
+  level:
+    root: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql: TRACE
+    com.moden.modenapi: DEBUG

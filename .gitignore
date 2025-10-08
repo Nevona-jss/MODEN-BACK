@@ -1,0 +1,64 @@
+### ==========================
+###  Java / Spring Boot
+### ==========================
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+### ==========================
+###  Maven / Gradle
+### ==========================
+.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.properties
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### ==========================
+###  IDE konfiguratsiyalari
+### ==========================
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Eclipse / STS
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# VS Code
+.vscode/
+
+### ==========================
+###  OS / System fayllar
+### ==========================
+.DS_Store
+Thumbs.db
+
+### ==========================
+###  Maxfiy fayllar (Secrets)
+### ==========================
+.env
+application-secret.yml
+
+### ==========================
+###  Boshqa (Misc)
+### ==========================
+HELP.md
