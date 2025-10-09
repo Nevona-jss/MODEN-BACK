@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: moden-api
+    env: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: DB_URL
+      - key: DB_USER
+      - key: DB_PASS
+      - key: JWT_SECRET
