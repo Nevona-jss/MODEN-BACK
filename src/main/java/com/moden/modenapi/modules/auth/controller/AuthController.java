@@ -51,37 +51,52 @@ public class AuthController {
     }
 
 
-    // 🔹 SIGN IN (name + phone)
     @PostMapping("/signin")
     public ResponseEntity<ResponseMessage<Map<String, String>>> signIn(
             @RequestBody SignInRequest req,
             HttpServletResponse response
     ) {
-        // Validate by name + phone
-        var tokens = authService.signInByNameAndPhone(req);
+        try {
+            var tokens = authService.signInByNameAndPhone(req);
 
-        // 🍪 Refresh token -> HttpOnly cookie (1 month)
-        ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", tokens.refreshToken())
-                .httpOnly(true)
-                .secure(false)
-                .path("/")
-                .maxAge(Duration.ofDays(30))
-              //  .sameSite("Strict")
-                .build();
+            ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", tokens.refreshToken())
+                    .httpOnly(true)
+                    .secure(false)
+                    .path("/")
+                    .maxAge(Duration.ofDays(30))
+                    .build();
 
-        response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
+            response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
 
-        // ✅ Return only accessToken in body
-        Map<String, String> body = Map.of("accessToken", tokens.accessToken());
+            Map<String, String> body = Map.of("accessToken", tokens.accessToken());
 
-        return ResponseEntity.ok(
-                ResponseMessage.<Map<String, String>>builder()
-                        .success(true)
-                        .message("Login successful")
-                        .data(body)
-                        .build()
-        );
+            return ResponseEntity.ok(
+                    ResponseMessage.<Map<String, String>>builder()
+                            .success(true)
+                            .message("Login successful")
+                            .data(body)
+                            .build()
+            );
+
+        } catch (IllegalArgumentException e) {
+            // ❌ User not found
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ResponseMessage.<Map<String, String>>builder()
+                            .success(false)
+                            .message(e.getMessage())
+                            .data(null)
+                            .build());
+        } catch (Exception e) {
+            // ❌ Other errors (e.g., JWT generation)
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ResponseMessage.<Map<String, String>>builder()
+                            .success(false)
+                            .message("Login failed: " + e.getMessage())
+                            .data(null)
+                            .build());
+        }
     }
+
 
     // 🔹 REFRESH TOKEN
     @PostMapping("/refresh")

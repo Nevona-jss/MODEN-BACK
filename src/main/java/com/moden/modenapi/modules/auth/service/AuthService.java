@@ -40,7 +40,7 @@ public class AuthService {
 
     public AuthResponse signInByNameAndPhone(SignInRequest req) {
         var user = userRepository.findByNameAndPhone(req.name(), req.phone())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         String accessToken = jwtProvider.generateAccessToken(
                 user.getId().toString(), user.getUserType().name());
