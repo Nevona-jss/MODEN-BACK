@@ -1,4 +1,4 @@
-package com.moden.modenapi.modules.promo.model;
+package com.moden.modenapi.modules.point.model;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

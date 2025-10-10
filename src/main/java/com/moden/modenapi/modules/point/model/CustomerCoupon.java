@@ -1,4 +1,4 @@
-package com.moden.modenapi.modules.promo.model;
+package com.moden.modenapi.modules.point.model;
 
 import java.time.Instant;
 import java.util.UUID;

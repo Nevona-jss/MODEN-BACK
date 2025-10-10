@@ -1,68 +1,135 @@
 package com.moden.modenapi.modules.auth.controller;
 
+import com.moden.modenapi.common.enums.UserType;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.modules.auth.dto.*;
 import com.moden.modenapi.modules.auth.service.AuthService;
+import com.moden.modenapi.security.JwtProvider;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
+import java.util.*;
+
+/**
+ * Controller for authentication and token lifecycle management.
+ *
+ * - Handles sign-up, sign-in (with name + phone)
+ * - Issues Access token (to frontend) and Refresh token (in cookie)
+ * - Supports /refresh endpoint for token renewal
+ */
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final AuthService service;
+    private final AuthService authService;
+    private final JwtProvider jwtProvider;
 
+    // 🔹 CUSTOMER SIGN UP
     @PostMapping("/signup")
     public ResponseEntity<ResponseMessage<Void>> signUp(
-            @RequestBody SignUpRequest req,
-            @RequestParam(defaultValue = "customer") String apiType
+            @RequestBody SignUpRequest req
     ) {
-        service.signUp(req, apiType);
+        // userType ni majburan CUSTOMER qilib qo'yamiz
+        var fixedReq = new SignUpRequest(req.name(), req.phone(), UserType.CUSTOMER);
+        authService.signUp(fixedReq);
         return ResponseEntity.ok(
                 ResponseMessage.<Void>builder()
                         .success(true)
-                        .message("User successfully registered")
+                        .message("Customer successfully registered.")
                         .data(null)
                         .build()
         );
     }
 
+
+    // 🔹 SIGN IN (name + phone)
     @PostMapping("/signin")
-    public ResponseEntity<ResponseMessage<AuthResponse>> signIn(
+    public ResponseEntity<ResponseMessage<Map<String, String>>> signIn(
             @RequestBody SignInRequest req,
             HttpServletResponse response
     ) {
-        var tokens = service.signIn(req);
+        // Validate by name + phone
+        var tokens = authService.signInByNameAndPhone(req);
 
-        // 🔹 Access token HTTP-only cookie
-        ResponseCookie accessCookie = ResponseCookie.from("access_token", tokens.accessToken())
-                .httpOnly(true)
-                .secure(false) // HTTPS bo‘lsa true qil
-                .path("/")
-                .maxAge(60 * 60) // 1 soat
-                .sameSite("Strict")
-                .build();
-
-        // 🔹 Refresh token HTTP-only cookie
+        // 🍪 Refresh token -> HttpOnly cookie (1 month)
         ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", tokens.refreshToken())
                 .httpOnly(true)
                 .secure(false)
                 .path("/")
-                .maxAge(7 * 24 * 60 * 60) // 7 kun
-                .sameSite("Strict")
+                .maxAge(Duration.ofDays(30))
+              //  .sameSite("Strict")
                 .build();
 
-        response.addHeader("Set-Cookie", accessCookie.toString());
-        response.addHeader("Set-Cookie", refreshCookie.toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
+
+        // ✅ Return only accessToken in body
+        Map<String, String> body = Map.of("accessToken", tokens.accessToken());
 
         return ResponseEntity.ok(
-                ResponseMessage.<AuthResponse>builder()
+                ResponseMessage.<Map<String, String>>builder()
                         .success(true)
                         .message("Login successful")
+                        .data(body)
+                        .build()
+        );
+    }
+
+    // 🔹 REFRESH TOKEN
+    @PostMapping("/refresh")
+    public ResponseEntity<ResponseMessage<Map<String, String>>> refresh(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        String refreshToken = Arrays.stream(Optional.ofNullable(request.getCookies()).orElse(new Cookie[0]))
+                .filter(c -> "refresh_token".equals(c.getName()))
+                .map(Cookie::getValue)
+                .findFirst()
+                .orElse(null);
+
+        if (refreshToken == null || !jwtProvider.validateToken(refreshToken)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ResponseMessage.<Map<String, String>>builder()
+                            .success(false)
+                            .message("Invalid or missing refresh token")
+                            .data(null)
+                            .build());
+        }
+
+        // Extract user info
+        String userId = jwtProvider.getUserId(refreshToken);
+        String role = jwtProvider.getUserRole(refreshToken);
+
+        // Generate new tokens
+        String newAccessToken = jwtProvider.generateAccessToken(userId, role);
+        String newRefreshToken = jwtProvider.generateRefreshToken(userId);
+
+        // 🍪 Replace refresh token cookie
+        ResponseCookie newRefreshCookie = ResponseCookie.from("refresh_token", newRefreshToken)
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(Duration.ofDays(30))
+               // .sameSite("Strict")
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, newRefreshCookie.toString());
+
+        // ✅ Return accessToken to frontend
+        Map<String, String> tokens = Map.of("accessToken", newAccessToken);
+
+        return ResponseEntity.ok(
+                ResponseMessage.<Map<String, String>>builder()
+                        .success(true)
+                        .message("Token refreshed successfully")
                         .data(tokens)
                         .build()
         );

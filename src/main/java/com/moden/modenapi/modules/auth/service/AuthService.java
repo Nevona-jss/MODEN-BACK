@@ -1,13 +1,11 @@
 package com.moden.modenapi.modules.auth.service;
 
-import com.moden.modenapi.common.enums.UserType;
 import com.moden.modenapi.modules.auth.dto.*;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.security.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -15,34 +13,37 @@ public class AuthService {
     private final UserRepository userRepository;
     private final JwtProvider jwtProvider;
 
-    // 🔹 Ro‘yxatdan o‘tish (token bermaydi)
-    public void signUp(SignUpRequest req, String apiType) {
-        var existing = userRepository.findByPhone(req.phone()).orElse(null);
-        if (existing == null) {
-            UserType userType = UserType.CUSTOMER;
-            if ("designer".equalsIgnoreCase(apiType)) {
-                userType = UserType.DESIGNER;
-            } else if ("salon".equalsIgnoreCase(apiType)) {
-                userType = UserType.HAIR_STUDIO;
-            }
+    public void signUp(SignUpRequest req) {
+        userRepository.findByPhone(req.phone()).ifPresent(u -> {
+            throw new IllegalArgumentException("User already registered with this phone number.");
+        });
 
-            var user = User.builder()
-                    .name(req.name())
-                    .phone(req.phone())
-                    .userType(userType)
-                    .build();
+        var user = User.builder()
+                .name(req.name())
+                .phone(req.phone())
+                .userType(req.userType())
+                .build();
 
-            userRepository.save(user);
-        }
+        userRepository.save(user);
     }
 
-    // 🔹 Kirish — Access + Refresh token yaratish
     public AuthResponse signIn(SignInRequest req) {
         var user = userRepository.findByPhone(req.phone())
-                .orElseThrow(() -> new RuntimeException("Foydalanuvchi topilmadi"));
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // access va refresh token yaratamiz
-        String accessToken = jwtProvider.generateToken(user.getId().toString());
+        String accessToken = jwtProvider.generateAccessToken(
+                user.getId().toString(), user.getUserType().name());
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
+
+        return new AuthResponse(accessToken, refreshToken);
+    }
+
+    public AuthResponse signInByNameAndPhone(SignInRequest req) {
+        var user = userRepository.findByNameAndPhone(req.name(), req.phone())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        String accessToken = jwtProvider.generateAccessToken(
+                user.getId().toString(), user.getUserType().name());
         String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
 
         return new AuthResponse(accessToken, refreshToken);

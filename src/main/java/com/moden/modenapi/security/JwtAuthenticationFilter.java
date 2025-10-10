@@ -3,20 +3,29 @@ package com.moden.modenapi.security;
 import com.moden.modenapi.common.utils.JwtUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.List;
 
-import static com.moden.modenapi.security.SecurityConstants.*;
-
+/**
+ * Custom JWT authentication filter executed once per request.
+ * <p>
+ * Responsibilities:
+ * <ul>
+ *     <li>Extract JWT token from the Authorization header or cookies.</li>
+ *     <li>Validate and parse the token using {@link JwtProvider}.</li>
+ *     <li>Load user details and set the authenticated context for the request.</li>
+ *     <li>Skip authentication for Swagger and Auth endpoints.</li>
+ * </ul>
+ */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -30,54 +39,59 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String uri = req.getRequestURI();
 
-        // 🔓 Swagger va static resource’lar JWT tekshiruvisiz o‘tadi
+        // 🔓 Allow unauthenticated access to Swagger & Auth endpoints
         if (uri.startsWith("/swagger-ui")
                 || uri.startsWith("/v3/api-docs")
                 || uri.startsWith("/swagger-resources")
                 || uri.startsWith("/webjars")
                 || uri.equals("/")
-                || uri.startsWith("/api/auth") // login/signup uchun ham JWT kerak emas
-        ) {
+                || uri.startsWith("/api/auth")) {
             chain.doFilter(req, res);
             return;
         }
 
         try {
-            // 🔹 Access tokenni cookie'dan olish
-            String token = extractTokenFromCookies(req);
+            // Extract JWT from header or cookies
+            String token = extractToken(req);
 
-            if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                String subject = jwtProvider.parseSubject(token);
+            if (token != null && jwtProvider.validateToken(token)
+                    && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                if (subject != null) {
-                    var userDetails = userDetailsService.loadUserByUsername(subject);
-                    var authToken = new UsernamePasswordAuthenticationToken(
-                            userDetails,
-                            null,
-                            userDetails.getAuthorities()
-                    );
-                    SecurityContextHolder.getContext().setAuthentication(authToken);
-                }
+                // Parse userId and role from token
+                String userId = jwtProvider.getUserId(token);
+                String role = jwtProvider.getUserRole(token);
+
+                var userDetails = userDetailsService.loadUserByUsername(userId);
+
+                // Build authentication object with user role
+                var authToken = new UsernamePasswordAuthenticationToken(
+                        userDetails,
+                        null,
+                        List.of(new SimpleGrantedAuthority(role))
+                );
+
+                SecurityContextHolder.getContext().setAuthentication(authToken);
             }
+
         } catch (Exception e) {
-            logger.warn("JWT check failed: " + e.getMessage());
+            logger.warn("⚠️ JWT validation failed: " + e.getMessage());
         }
 
         chain.doFilter(req, res);
     }
 
     /**
-     * 🍪 Cookie ichidan access_token ni ajratib olish
-     * dsfsgdg
+     * Extracts token from Authorization header or cookies.
+     *
+     * @param req current HTTP request
+     * @return JWT token string or null if not found
      */
-    private String extractTokenFromCookies(HttpServletRequest req) {
-        // 1️⃣ Header orqali
+    private String extractToken(HttpServletRequest req) {
+        // 1️⃣ From Authorization header
         String headerToken = JwtUtils.extractToken(req);
-        if (headerToken != null) {
-            return headerToken;
-        }
+        if (headerToken != null) return headerToken;
 
-        // 2️⃣ Cookie orqali
+        // 2️⃣ From cookies (e.g., when used with web clients)
         if (req.getCookies() != null) {
             for (var cookie : req.getCookies()) {
                 if ("access_token".equals(cookie.getName())) {
@@ -85,8 +99,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         }
-
         return null;
     }
-
 }

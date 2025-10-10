@@ -19,7 +19,7 @@ public class NotificationLog {
 
     @ManyToOne(optional=false)
     @JoinColumn(name="notification_id")
-    private NotificationTmpl notification;
+    private Notification notification;
 
     @ManyToOne(optional=false)
     @JoinColumn(name="customer_id")
