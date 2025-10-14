@@ -45,14 +45,14 @@ app:
     secret: ${JWT_SECRET}
     access-expiration-ms: 86400000       # 1 kun (24*60*60*1000)
     refresh-expiration-ms: 2592000000    # 30 kun (30*24*60*60*1000)
-
-# ✅ Security (basic auth test uchun)
-security:
-  user:
-    name: ${ADMIN_USER:admin}
-    password: ${ADMIN_PASS:hyona123}
-  basic:
-    enabled: false
+#
+## ✅ Security (basic auth test uchun)
+#security:
+#  user:
+#    name: ${ADMIN_USER:admin}
+#    password: ${ADMIN_PASS:hyona123}
+#  basic:
+#    enabled: false
 
 # ✅ Logging
 logging:

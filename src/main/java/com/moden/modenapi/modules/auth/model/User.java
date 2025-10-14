@@ -51,6 +51,8 @@ public class User extends BaseEntity {
 
     @Column(nullable=false)
     private boolean consentMarketing = false;
+    @Column(length = 255)
+    private String address;
 
     private String naverId;
 }

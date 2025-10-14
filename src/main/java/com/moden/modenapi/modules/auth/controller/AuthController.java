@@ -2,6 +2,7 @@ package com.moden.modenapi.modules.auth.controller;
 
 import com.moden.modenapi.common.enums.UserType;
 import com.moden.modenapi.common.response.ResponseMessage;
+import com.moden.modenapi.common.utils.CookieUtil;
 import com.moden.modenapi.modules.auth.dto.*;
 import com.moden.modenapi.modules.auth.service.AuthService;
 import com.moden.modenapi.security.JwtProvider;
@@ -50,23 +51,17 @@ public class AuthController {
         );
     }
 
-
     @PostMapping("/signin")
     public ResponseEntity<ResponseMessage<Map<String, String>>> signIn(
             @RequestBody SignInRequest req,
+            HttpServletRequest request,
             HttpServletResponse response
     ) {
         try {
             var tokens = authService.signInByNameAndPhone(req);
 
-            ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", tokens.refreshToken())
-                    .httpOnly(true)
-                    .secure(false)
-                    .path("/")
-                    .maxAge(Duration.ofDays(30))
-                    .build();
-
-            response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
+            // ✅ Universal cookie setter
+            CookieUtil.setRefreshTokenCookie(response, request, tokens.refreshToken());
 
             Map<String, String> body = Map.of("accessToken", tokens.accessToken());
 
@@ -79,7 +74,6 @@ public class AuthController {
             );
 
         } catch (IllegalArgumentException e) {
-            // ❌ User not found
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ResponseMessage.<Map<String, String>>builder()
                             .success(false)
@@ -87,7 +81,6 @@ public class AuthController {
                             .data(null)
                             .build());
         } catch (Exception e) {
-            // ❌ Other errors (e.g., JWT generation)
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ResponseMessage.<Map<String, String>>builder()
                             .success(false)
@@ -97,13 +90,21 @@ public class AuthController {
         }
     }
 
-
-    // 🔹 REFRESH TOKEN
     @PostMapping("/refresh")
-    public ResponseEntity<ResponseMessage<Map<String, String>>> refresh(
+    public ResponseEntity<?> refresh(
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+        // 🔍 Debugging cookie visibility
+        if (request.getCookies() == null) {
+            System.out.println("❌ No cookies received!");
+        } else {
+            for (Cookie c : request.getCookies()) {
+                System.out.println("🍪 Cookie received: " + c.getName() + " = " + c.getValue());
+            }
+        }
+
+        // ⬇️ Then your actual refresh logic
         String refreshToken = Arrays.stream(Optional.ofNullable(request.getCookies()).orElse(new Cookie[0]))
                 .filter(c -> "refresh_token".equals(c.getName()))
                 .map(Cookie::getValue)
@@ -119,34 +120,88 @@ public class AuthController {
                             .build());
         }
 
-        // Extract user info
+        // Generate new access token etc...
         String userId = jwtProvider.getUserId(refreshToken);
         String role = jwtProvider.getUserRole(refreshToken);
-
-        // Generate new tokens
         String newAccessToken = jwtProvider.generateAccessToken(userId, role);
         String newRefreshToken = jwtProvider.generateRefreshToken(userId);
 
-        // 🍪 Replace refresh token cookie
-        ResponseCookie newRefreshCookie = ResponseCookie.from("refresh_token", newRefreshToken)
+        ResponseCookie newCookie = ResponseCookie.from("refresh_token", newRefreshToken)
                 .httpOnly(true)
                 .secure(false)
+                .sameSite("Lax")
                 .path("/")
                 .maxAge(Duration.ofDays(30))
-               // .sameSite("Strict")
                 .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, newCookie.toString());
 
-        response.addHeader(HttpHeaders.SET_COOKIE, newRefreshCookie.toString());
-
-        // ✅ Return accessToken to frontend
-        Map<String, String> tokens = Map.of("accessToken", newAccessToken);
-
-        return ResponseEntity.ok(
-                ResponseMessage.<Map<String, String>>builder()
-                        .success(true)
-                        .message("Token refreshed successfully")
-                        .data(tokens)
-                        .build()
-        );
+        Map<String, String> data = Map.of("accessToken", newAccessToken);
+        return ResponseEntity.ok(ResponseMessage.success("Token refreshed successfully", data));
     }
+
+
+
+//    // 🔹 REFRESH TOKEN
+//    @PostMapping("/refresh")
+//    public ResponseEntity<ResponseMessage<Map<String, String>>> refresh(
+//            HttpServletRequest request,
+//            HttpServletResponse response
+//    ) {
+//        Cookie[] cookies = request.getCookies();
+//        System.out.println(cookies);
+//        if (cookies != null) {
+//            for (Cookie cookie : cookies) {
+//                if ("refresh_token".equals(cookie.getName())) {
+//                    String token = cookie.getValue();
+//                    System.out.println("✅ Refresh Token: " + token);
+//                }
+//            }
+//        }
+//
+//
+//        String refreshToken = Arrays.stream(Optional.ofNullable(request.getCookies()).orElse(new Cookie[0]))
+//                .filter(c -> "refresh_token".equals(c.getName()))
+//                .map(Cookie::getValue)
+//                .findFirst()
+//                .orElse(null);
+//
+//        if (refreshToken == null || !jwtProvider.validateToken(refreshToken)) {
+//            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+//                    .body(ResponseMessage.<Map<String, String>>builder()
+//                            .success(false)
+//                            .message("Invalid or missing refresh token")
+//                            .data(null)
+//                            .build());
+//        }
+//
+//        // Extract user info
+//        String userId = jwtProvider.getUserId(refreshToken);
+//        String role = jwtProvider.getUserRole(refreshToken);
+//
+//        // Generate new tokens
+//        String newAccessToken = jwtProvider.generateAccessToken(userId, role);
+//        String newRefreshToken = jwtProvider.generateRefreshToken(userId);
+//
+//        // 🍪 Replace refresh token cookie
+//        ResponseCookie newRefreshCookie = ResponseCookie.from("refresh_token", newRefreshToken)
+//                .httpOnly(true)
+//                .secure(false)
+//                .path("/")
+//                .maxAge(Duration.ofDays(30))
+//                .sameSite("None")
+//                .build();
+//
+//        response.addHeader(HttpHeaders.SET_COOKIE, newRefreshCookie.toString());
+//
+//        // ✅ Return accessToken to frontend
+//        Map<String, String> tokens = Map.of("accessToken", newAccessToken);
+//
+//        return ResponseEntity.ok(
+//                ResponseMessage.<Map<String, String>>builder()
+//                        .success(true)
+//                        .message("Token refreshed successfully")
+//                        .data(tokens)
+//                        .build()
+//        );
+//    }
 }

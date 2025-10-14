@@ -1,9 +1,13 @@
 package com.moden.modenapi.modules.studio.service;
 
+import com.moden.modenapi.common.enums.UserType;
 import com.moden.modenapi.common.service.BaseService;
+import com.moden.modenapi.modules.auth.model.User;
+import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.modules.studio.dto.StudioCreateReq;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.model.HairStudio;
+import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,7 +18,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Service layer that manages Hair Studio CRUD operations.
+ * ✅ HairStudioService
+ * Handles CRUD and automatic owner registration.
  */
 @Service
 @Transactional
@@ -22,6 +27,7 @@ import java.util.UUID;
 public class HairStudioService extends BaseService<HairStudio, UUID> {
 
     private final HairStudioRepository repo;
+    private final UserRepository userRepository;
 
     @Override
     protected JpaRepository<HairStudio, UUID> getRepository() {
@@ -29,31 +35,60 @@ public class HairStudioService extends BaseService<HairStudio, UUID> {
     }
 
     /**
-     * 🔹 Creates a new hair studio record.
+     * 🔹 Create new Hair Studio and its owner.
      */
     public StudioRes create(StudioCreateReq req) {
-        var entity = HairStudio.builder()
+
+        // 1️⃣ Check or create owner user
+        User ownerUser = userRepository.findByPhone(req.ownerPhone())
+                .orElseGet(() -> {
+                    User newOwner = User.builder()
+                            .name(req.owner())
+                            .phone(req.ownerPhone())
+                            .userType(UserType.HAIR_STUDIO)
+                            .build();
+                    return userRepository.save(newOwner);
+                });
+
+        // 2️⃣ Create hair studio entity
+        HairStudio studio = HairStudio.builder()
                 .name(req.name())
-                .qrCodeUrl(req.qrCodeUrl())
                 .businessNo(req.businessNo())
+                .owner(req.owner())
+                .ownerPhone(req.ownerPhone())
+                .studioPhone(req.studioPhone())
                 .address(req.address())
-                .phone(req.phone())
+                .logo(req.logo())
+                .instagram(req.instagram())
+                .naver(req.naver())
                 .build();
 
-        var saved = save(entity);
+        // 3️⃣ Optional detail entity
+        HairStudioDetail detail = HairStudioDetail.builder()
+                .studio(studio)
+                .build();
+        studio.setDetail(detail);
 
+        // 4️⃣ Save studio
+        HairStudio saved = save(studio);
+
+        // 5️⃣ Return DTO
         return new StudioRes(
                 saved.getId(),
                 saved.getName(),
-                saved.getQrCodeUrl(),
                 saved.getBusinessNo(),
+                saved.getOwner(),
+                saved.getOwnerPhone(),
+                saved.getStudioPhone(),
                 saved.getAddress(),
-                saved.getPhone()
+                saved.getLogo(),
+                saved.getInstagram(),
+                saved.getNaver()
         );
     }
 
     /**
-     * 🔹 Retrieves all studios as DTO list.
+     * 🔹 Retrieve all studios
      */
     @Transactional(readOnly = true)
     public List<StudioRes> list() {
@@ -61,27 +96,35 @@ public class HairStudioService extends BaseService<HairStudio, UUID> {
                 .map(s -> new StudioRes(
                         s.getId(),
                         s.getName(),
-                        s.getQrCodeUrl(),
                         s.getBusinessNo(),
+                        s.getOwner(),
+                        s.getOwnerPhone(),
+                        s.getStudioPhone(),
                         s.getAddress(),
-                        s.getPhone()
+                        s.getLogo(),
+                        s.getInstagram(),
+                        s.getNaver()
                 ))
                 .toList();
     }
 
     /**
-     * 🔹 Retrieves a single studio by ID and maps it to a DTO.
+     * 🔹 Retrieve one studio by ID
      */
     @Transactional(readOnly = true)
     public StudioRes get(UUID id) {
-        var s = getById(id); // ✅ BaseService already provides getById(ID)
+        HairStudio s = getById(id);
         return new StudioRes(
                 s.getId(),
                 s.getName(),
-                s.getQrCodeUrl(),
                 s.getBusinessNo(),
+                s.getOwner(),
+                s.getOwnerPhone(),
+                s.getStudioPhone(),
                 s.getAddress(),
-                s.getPhone()
+                s.getLogo(),
+                s.getInstagram(),
+                s.getNaver()
         );
     }
 }
