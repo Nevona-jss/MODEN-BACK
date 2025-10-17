@@ -3,11 +3,16 @@ package com.moden.modenapi.security;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -18,6 +23,7 @@ import java.util.List;
 
 @Configuration
 @RequiredArgsConstructor
+@EnableMethodSecurity // enables @PreAuthorize, @RolesAllowed, etc.
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -25,76 +31,90 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // ✅ Enable CORS (allow cookies from frontend)
+                // CORS configuration
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                // ✅ Disable CSRF for token-based authentication
+                // Disable CSRF for token-based API
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // ✅ Stateless session management (JWT only)
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
+                // Stateless session management (JWT)
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // ✅ Define authorization rules
+                // Authorization rules
                 .authorizeHttpRequests(auth -> auth
+                        // Allow preflight
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // Public auth & docs endpoints
                         .requestMatchers(
                                 "/api/auth/signup",
                                 "/api/auth/signin",
                                 "/api/auth/refresh",
                                 "/swagger-ui/**",
-                                "/v3/api-docs/**"
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**",
+                                "/v3/api-docs",
+                                "/swagger-resources/**",
+                                "/webjars/**"
                         ).permitAll()
+
+                        // Role-based protections
                         .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
                         .requestMatchers("/api/designers/**").hasAuthority("DESIGNER")
                         .requestMatchers("/api/studios/**").hasAuthority("HAIR_STUDIO")
                         .requestMatchers("/api/customers/**").hasAuthority("CUSTOMER")
+
+                        // everything else requires authentication
                         .anyRequest().authenticated()
                 )
 
-                // ✅ Add custom JWT authentication filter
+                // Add JWT filter
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
-        // 🚀 Build and return security filter chain
         return http.build();
     }
 
     /**
-     * ✅ CORS configuration to allow cross-origin cookies
+     * CORS config: use allowedOriginPatterns when allowCredentials = true
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
+        CorsConfiguration cfg = new CorsConfiguration();
 
-        // Allowed frontends (local + production)
-        config.setAllowedOrigins(List.of(
+        // Use patterns to support IPs, wildcards, localhost variations
+        cfg.setAllowedOriginPatterns(List.of(
                 "http://localhost:3000",
                 "http://localhost:5173",
-                "https://moden-web.vercel.app"
+                "http://localhost:8080",
+                "http://192.168.*:*",
+                "https://moden-kappa.vercel.app"
         ));
 
-        // Allow basic HTTP methods
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        cfg.setAllowedHeaders(List.of("*"));
 
-        // Allow all headers
-        config.setAllowedHeaders(List.of("*"));
+        // important for cookies
+        cfg.setAllowCredentials(true);
 
-        // ⚠️ This must be true to allow cookies (refresh_token)
-        config.setAllowCredentials(true);
+        // expose Set-Cookie so frontend can see it if needed
+        cfg.setExposedHeaders(List.of(HttpHeaders.SET_COOKIE, HttpHeaders.AUTHORIZATION));
 
-        // Optional cache duration for preflight
-        config.setMaxAge(3600L);
+        cfg.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
+        source.registerCorsConfiguration("/**", cfg);
         return source;
     }
 
-    /**
-     * ✅ Authentication manager bean (for login)
-     */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
+
+    // handy bean for password hashing
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
+    }
+
 }

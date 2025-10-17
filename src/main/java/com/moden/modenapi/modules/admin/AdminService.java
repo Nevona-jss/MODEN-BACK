@@ -69,6 +69,7 @@ public class AdminService {
         return hairStudioRepository.findAll().stream()
                 .map(s -> new StudioRes(
                         s.getId(),
+                        s.getIdForLogin(),
                         s.getName(),
                         s.getBusinessNo(),
                         s.getOwner(),

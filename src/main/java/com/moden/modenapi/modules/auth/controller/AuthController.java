@@ -90,7 +90,7 @@ public class AuthController {
         }
     }
 
-    @PostMapping("/refresh")
+    @GetMapping ("/refresh")
     public ResponseEntity<?> refresh(
             HttpServletRequest request,
             HttpServletResponse response

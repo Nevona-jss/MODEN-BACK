@@ -9,11 +9,6 @@ import java.time.Duration;
 
 public class CookieUtil {
 
-    /**
-     * ✅ Dynamically set the refresh_token cookie based on environment.
-     * - Local (HTTP): SameSite=Lax, Secure=false
-     * - HTTPS (production): SameSite=None, Secure=true
-     */
     public static void setRefreshTokenCookie(
             HttpServletResponse response,
             HttpServletRequest request,
@@ -25,10 +20,11 @@ public class CookieUtil {
         boolean isLocal = host != null &&
                 (host.contains("localhost") || host.contains("127.0.0.1") || host.startsWith("192.168."));
 
+        // ✅ detect HTTPS environment
         boolean isHttps = request.isSecure() || (!isLocal && host != null && host.startsWith("https"));
 
-        String sameSite = isHttps ? "None" : "Lax";  // ✅ Safe combination
-        boolean secure = isHttps;                    // ✅ HTTPS → Secure=true, HTTP → false
+        String sameSite = "None";
+        boolean secure = isHttps; // must be true on HTTPS
 
         ResponseCookie cookie = ResponseCookie.from("refresh_token", refreshToken)
                 .httpOnly(true)
@@ -43,4 +39,5 @@ public class CookieUtil {
         System.out.printf("✅ Set refresh_token cookie [secure=%s, sameSite=%s, host=%s]%n",
                 secure, sameSite, host);
     }
+
 }

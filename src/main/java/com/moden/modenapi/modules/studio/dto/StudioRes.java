@@ -4,10 +4,11 @@ import java.util.UUID;
 
 /**
  * ✅ StudioRes
- * DTO returned after creating or retrieving a Hair Studio.
+ * Returned after creating or retrieving a Hair Studio.
  */
 public record StudioRes(
         UUID id,
+        String idForLogin,
         String name,
         String businessNo,
         String owner,

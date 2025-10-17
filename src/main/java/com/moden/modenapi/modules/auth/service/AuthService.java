@@ -27,16 +27,7 @@ public class AuthService {
         userRepository.save(user);
     }
 
-    public AuthResponse signIn(SignInRequest req) {
-        var user = userRepository.findByPhone(req.phone())
-                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        String accessToken = jwtProvider.generateAccessToken(
-                user.getId().toString(), user.getUserType().name());
-        String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
-
-        return new AuthResponse(accessToken, refreshToken);
-    }
 
     public AuthResponse signInByNameAndPhone(SignInRequest req) {
         var user = userRepository.findByNameAndPhone(req.name(), req.phone())

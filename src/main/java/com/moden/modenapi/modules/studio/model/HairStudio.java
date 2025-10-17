@@ -2,7 +2,6 @@ package com.moden.modenapi.modules.studio.model;
 
 import com.moden.modenapi.common.model.BaseEntity;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.UuidGenerator;
@@ -24,11 +23,16 @@ import java.util.UUID;
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class HairStudio extends BaseEntity {
 
+    // ✅ Primary key (UUID)
     @Id
     @GeneratedValue
     @UuidGenerator
     @Column(columnDefinition = "uniqueidentifier")
     private UUID id;
+
+    // ✅ Login ID (custom generated from name)
+    @Column(name = "studio_code", unique = true, length = 50)
+    private String idForLogin;
 
     // 🔹 Required fields
     @Column(nullable = false, length = 150)
@@ -64,6 +68,6 @@ public class HairStudio extends BaseEntity {
 
     // 🔹 Relationship
     @OneToOne(mappedBy = "studio", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
-    @JsonIgnoreProperties({"studio"}) // prevent recursion with HairStudioDetail
+    @JsonIgnoreProperties({"studio"})
     private HairStudioDetail detail;
 }
