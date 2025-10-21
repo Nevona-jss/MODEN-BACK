@@ -105,10 +105,10 @@ public class AuthController {
         String role = jwtProvider.getUserRole(refreshToken);
 
         String newAccessToken = jwtProvider.generateAccessToken(userId, role);
-        String newRefreshToken = jwtProvider.generateRefreshToken(userId);
+       // String newRefreshToken = jwtProvider.generateRefreshToken(userId);
 
         // ✅ Update cookie
-        ResponseCookie cookie = ResponseCookie.from("refresh_token", newRefreshToken)
+        ResponseCookie cookie = ResponseCookie.from("refresh_token", refreshToken)
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("None")
