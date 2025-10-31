@@ -3,9 +3,10 @@ package com.moden.modenapi.modules.auth.controller;
 import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.utils.CookieUtil;
-import com.moden.modenapi.modules.auth.dto.*;
 import com.moden.modenapi.modules.auth.service.AuthService;
 import com.moden.modenapi.modules.auth.service.UserSessionService;
+import com.moden.modenapi.modules.customer.dto.CustomerSignInRequest;
+import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.security.JwtProvider;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,10 +24,10 @@ import java.util.*;
 /**
  * ✅ AuthController
  * Handles:
- * - Sign Up (Customer)
- * - Sign In
- * - Refresh Token
- * - Logout
+ *  - Customer Sign Up
+ *  - Sign In
+ *  - Refresh Token
+ *  - Logout
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -41,11 +42,12 @@ public class AuthController {
     // 🔹 SIGN UP (CUSTOMER)
     // ----------------------------------------------------------------------
     @PostMapping("/signup")
-    public ResponseEntity<ResponseMessage<Void>> signUp(@RequestBody SignUpRequest req) {
-        // Force CUSTOMER role for all signups here
-        var fixedReq = new SignUpRequest(req.name(), req.phone(), Role.CUSTOMER);
+    public ResponseEntity<ResponseMessage<Void>> signUp(@RequestBody CustomerSignUpRequest req) {
+        // Force CUSTOMER role for all signups
+        CustomerSignUpRequest fixedReq =
+                new CustomerSignUpRequest(req.fullName(), req.phone(), req.studioId(), Role.CUSTOMER);
 
-        authService.signUp(fixedReq, "default123!"); // you can accept password if needed
+        authService.signUp(fixedReq, "default123!");
 
         return ResponseEntity.ok(
                 ResponseMessage.<Void>builder()
@@ -55,12 +57,14 @@ public class AuthController {
         );
     }
 
+
+
     // ----------------------------------------------------------------------
     // 🔹 SIGN IN (NAME + PHONE)
     // ----------------------------------------------------------------------
     @PostMapping("/signin")
     public ResponseEntity<ResponseMessage<Map<String, String>>> signIn(
-            @RequestBody SignInRequest req,
+            @RequestBody CustomerSignInRequest req,
             HttpServletRequest request,
             HttpServletResponse response
     ) {
@@ -105,9 +109,8 @@ public class AuthController {
         String role = jwtProvider.getUserRole(refreshToken);
 
         String newAccessToken = jwtProvider.generateAccessToken(userId, role);
-       // String newRefreshToken = jwtProvider.generateRefreshToken(userId);
 
-        // ✅ Update cookie
+        // ✅ Update cookie (secure, consistent)
         ResponseCookie cookie = ResponseCookie.from("refresh_token", refreshToken)
                 .httpOnly(true)
                 .secure(true)
@@ -120,6 +123,7 @@ public class AuthController {
         Map<String, String> tokens = Map.of("accessToken", newAccessToken);
         return ResponseEntity.ok(ResponseMessage.success("Token refreshed successfully", tokens));
     }
+
 
     // ----------------------------------------------------------------------
     // 🔹 LOGOUT
@@ -147,13 +151,12 @@ public class AuthController {
         // 🧹 Remove cookie on client side
         ResponseCookie expiredCookie = ResponseCookie.from("refresh_token", "")
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(true)          // ← keep secure=true for consistency with CookieUtil
+                .sameSite("None")
                 .path("/")
                 .maxAge(0)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, expiredCookie.toString());
-
         return ResponseEntity.ok(ResponseMessage.success("Successfully logged out", null));
     }
 }

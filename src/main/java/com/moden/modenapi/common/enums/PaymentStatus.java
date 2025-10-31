@@ -1,3 +1,3 @@
 package com.moden.modenapi.common.enums;
 
-public enum PaymentStatus { PAID, REFUNDED, VOID }
+public enum PaymentStatus { UNPAID, PAID, PENDING, REFUNDED }

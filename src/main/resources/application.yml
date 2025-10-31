@@ -4,22 +4,25 @@ server:
     context-path: /
 
 spring:
+  # 🔹 optional import (for secrets like DB creds)
   config:
     import: optional:classpath:application-secret.yml
 
   application:
     name: moden-api
 
+  # ✅ Database Configuration (MSSQL)
   datasource:
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASS}
 
+  # ✅ JPA & Hibernate
   jpa:
     database-platform: org.hibernate.dialect.SQLServerDialect
     hibernate:
-      ddl-auto: update
+      ddl-auto: update        # or validate / none on production
     show-sql: true
     properties:
       hibernate:
@@ -27,32 +30,35 @@ spring:
         jdbc:
           time_zone: UTC
 
-  output:
-    ansi:
-      enabled: ALWAYS
+  # ✅ File Upload Config
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
 
+# ✅ File storage (images, etc.)
+file:
+  upload-dir: uploads/services
+  base-url: http://localhost:${server.port}/uploads/services
+
+# ✅ JWT Config
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-expiration-ms: 86400000        # 1 day
+    refresh-expiration-ms: 2592000000     # 30 days
+
+# ✅ Swagger & API Docs
 springdoc:
   api-docs:
     enabled: true
     path: /v3/api-docs
   swagger-ui:
     enabled: true
+    path: /docs
+    operations-sorter: method
   paths-to-match: /**
-
-# ✅ JWT konfiguratsiyasi
-app:
-  jwt:
-    secret: ${JWT_SECRET}
-    access-expiration-ms: 86400000       # 1 kun (24*60*60*1000)
-    refresh-expiration-ms: 2592000000    # 30 kun (30*24*60*60*1000)
-#
-## ✅ Security (basic auth test uchun)
-#security:
-#  user:
-#    name: ${ADMIN_USER:admin}
-#    password: ${ADMIN_PASS:hyona123}
-#  basic:
-#    enabled: false
+  default-produces-media-type: application/json
 
 # ✅ Logging
 logging:
@@ -61,3 +67,8 @@ logging:
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql: TRACE
     com.moden.modenapi: DEBUG
+
+# ✅ ANSI colors (console log colors)
+  output:
+    ansi:
+      enabled: ALWAYS

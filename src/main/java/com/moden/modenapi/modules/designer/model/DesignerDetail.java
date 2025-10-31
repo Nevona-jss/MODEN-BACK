@@ -1,48 +1,46 @@
 package com.moden.modenapi.modules.designer.model;
 
-import java.time.Instant;
-import java.util.UUID;
-
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.moden.modenapi.modules.studio.model.HairStudio;
+import com.moden.modenapi.common.enums.Position;
+import com.moden.modenapi.common.enums.Role;
+import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
-import com.moden.modenapi.modules.auth.model.User;
+import lombok.experimental.SuperBuilder;
+
+import java.util.UUID;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-@EqualsAndHashCode(of = "userId")
+@SuperBuilder
 @Entity
-@Table(name="designer_detail")
+@Table(name = "designer_detail")
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-public class DesignerDetail {
+public class DesignerDetail extends BaseEntity {
 
-    @Id
-    @Column(name="user_id", columnDefinition="uniqueidentifier")
+    @Column(name = "user_id", columnDefinition = "uniqueidentifier", nullable = false)
     private UUID userId;
 
-    @OneToOne(fetch=FetchType.LAZY)
-    @MapsId
-    @JoinColumn(name="user_id")
-    @JsonIgnoreProperties({"designerDetail"})  // 👈 loopdan saqlaydi
-    private User user; // must be UserType.DESIGNER
+    @Column(name = "hair_studio_id", columnDefinition = "uniqueidentifier", nullable = false)
+    private UUID hairStudioId;
 
-    @ManyToOne(optional=false)
-    @JoinColumn(name="hair_studio_id")
-    @JsonIgnoreProperties({"designers", "reservations"})  // 👈 loopdan saqlaydi
-    private HairStudio hairStudio;
+    @Column(length = 50, unique = true)
+    private String idForLogin; // Designer login code (e.g., DS-XXX-12345)
 
-    private String portfolioUrl;
-    private String phonePublic;
-
-    @Lob
+    @Column(length = 1000)
     private String bio;
 
-    @Builder.Default
-    private Instant createdAt = Instant.now();
-    private Instant updatedAt;
+    @Column(length = 500)
+    private String portfolioUrl; //ko'p rasm yuklanishi mumkin
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role = Role.DESIGNER; // ✅ FIXED — now builder & getter exist
+
+    @Enumerated(EnumType.STRING)
+    private Position position = Position.DESIGNER;
+
+
 }

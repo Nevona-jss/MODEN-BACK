@@ -1,61 +1,55 @@
+// com.moden.modenapi.modules.studio.dto.StudioCreateReq.java
 package com.moden.modenapi.modules.studio.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import java.math.BigDecimal;
 
-/**
- * DTO for creating a new hair studio.
- */
-@Schema(name = "StudioCreateReq", description = "Request for creating a hair studio. Only the first 3 fields are required.")
+@Schema(name = "StudioCreateReq", description = "Create a Hair Studio (and studio login credential).")
 public record StudioCreateReq(
 
-        @Schema(description = "Studio name", example = "Moden Hair", required = true)
-        @NotBlank(message = "Studio name is required")
-        @Size(max = 150, message = "Studio name must be under 150 characters")
-        String name,
-
         @Schema(description = "Business registration number", example = "123-45-67890", required = true)
-        @NotBlank(message = "Business number is required")
-        @Size(max = 100, message = "Business number must be under 100 characters")
+        @NotBlank @Size(max = 100)
         String businessNo,
 
-        @Schema(description = "Owner name", example = "Alice Kim", required = true)
-        @NotBlank(message = "Owner name is required")
-        @Size(max = 100, message = "Owner name must be under 100 characters")
-        String owner,
+        @Schema(description = "Owner fullName", example = "Alice Kim", required = true)
+        @NotBlank @Size(max = 100)
+        String ownerName,
 
-        // optional fields
-        @Schema(description = "Owner phone number", example = "+998901234567", required = false)
-        @Size(max = 50, message = "Owner phone number must be under 50 characters")
-        String ownerPhone,
+        @Schema(description = "Custom studio login ID (optional)", example = "ST-MODEN-12345")
+        String idForLogin,
 
-        @Schema(description = "Studio phone number", example = "+998901112233", required = false)
-        @Size(max = 50, message = "Studio phone number must be under 50 characters")
-        String studioPhone,
+        @Schema(description = "Login password (plain). Will be hashed before saving.", example = "moden1234!", required = true)
+        @NotBlank @Size(min = 6, max = 100)
+        String password,
 
-        @Schema(description = "Address", example = "Tashkent, Street 1", required = false)
-        @Size(max = 255, message = "Address must be under 255 characters")
-        String address,
+        @NotBlank
+        String fullName,
 
-        @Schema(description = "Logo URL", example = "https://cdn.example.com/logo.png", required = false)
-        @Size(max = 255, message = "Logo URL must be under 255 characters")
-        String logo,
+        // images (optional)
+        @Schema(description = "Main logo image URL")
+        @Size(max = 500)
+        String logoImageUrl,
 
-        @Schema(description = "Instagram profile URL", example = "https://instagram.com/modenhair", required = false)
-        @Size(max = 255, message = "Instagram link must be under 255 characters")
-        @Pattern(
-                regexp = "^(https?://)?(www\\.)?instagram\\.com/.*$",
-                message = "Invalid Instagram URL format"
-        )
-        String instagram,
+        @Schema(description = "Banner image URL for studio header")
+        @Size(max = 500)
+        String bannerImageUrl,
 
-        @Schema(description = "Naver link", example = "https://www.naver.com/..", required = false)
-        @Size(max = 255, message = "Naver link must be under 255 characters")
-        @Pattern(
-                regexp = "^(https?://)?(www\\.)?naver\\.com/.*$",
-                message = "Invalid Naver URL format"
-        )
-        String naver
+        @Schema(description = "Profile image URL (small avatar)")
+        @Size(max = 255)
+        String profileImageUrl,
+
+        // geo (optional)
+        @Schema(description = "Latitude", example = "37.5665")
+        @DecimalMin(value = "-90.0", message = "Latitude must be >= -90")
+        @DecimalMax(value = "90.0",  message = "Latitude must be <= 90")
+        BigDecimal latitude,
+
+        @Schema(description = "Longitude", example = "126.9780")
+        @DecimalMin(value = "-180.0", message = "Longitude must be >= -180")
+        @DecimalMax(value = "180.0",  message = "Longitude must be <= 180")
+        BigDecimal longitude
 ) {}

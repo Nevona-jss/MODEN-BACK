@@ -1,2 +1,2 @@
 package com.moden.modenapi.common.enums;
-public enum ReservationStatus { PENDING, CONFIRMED, CANCELLED, COMPLETED }
+public enum ReservationStatus { RESERVED, NOT_VISITED, CANCELLED, COMPLETED }

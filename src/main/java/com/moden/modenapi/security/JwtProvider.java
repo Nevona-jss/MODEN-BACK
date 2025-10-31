@@ -64,7 +64,7 @@ public class JwtProvider {
      * Extracts the user role from the token claims.
      *
      * @param token JWT string
-     * @return role name (e.g. ADMIN, DESIGNER, CUSTOMER)
+     * @return role fullName (e.g. ADMIN, DESIGNER, CUSTOMER)
      */
     public String getUserRole(String token) {
         Claims claims = parseClaims(token);

@@ -1,9 +1,12 @@
 package com.moden.modenapi.modules.auth.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.Instant;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -11,37 +14,38 @@ import java.time.Instant;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name="user_sessions")
+@Table(name = "user_sessions")
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-public class UserSession {
+public class UserSession extends BaseEntity {
 
-    @Id
-    @Column(length=50)
-    private String sessionId;
+    @Column(name = "user_id", columnDefinition = "uniqueidentifier", nullable = false)
+    private UUID userId;
 
-    @ManyToOne(optional=false)
-    @JoinColumn(name="user_id")
-    @JsonIgnoreProperties({"sessions", "designerDetail"}) // recursion to‘xtatish
-    private User user;
+    @Lob
+    private String deviceInfo; // OS, model info
 
-    @Lob private String deviceInfo;
-    @Column(length=100) private String deviceId;
-    @Column(length=20) private String deviceType;
-    @Column(length=20) private String appVersion;
-    @Column(length=45) private String ipAddress;
-    @Lob private String userAgent;
-    @Column(length=20) private String loginMethod;
+    @Column(length = 100)
+    private String deviceId; // unique device ID
+
+    @Column(length = 20)
+    private String deviceType; // Android, iOS, Web
+
+    @Column(length = 20)
+    private String appVersion;
+
+    @Column(length = 45)
+    private String ipAddress;
+
+    @Lob
+    private String userAgent;
+
+    @Column(length = 20)
+    private String loginMethod; // PASSWORD, KAKAO, APPLE, etc.
 
     private boolean isAutoLogin;
-    private Integer concurrentSessionLimit;
     private boolean isPrimarySession;
+    private boolean revoked;
 
     private Instant expiresAt;
     private Instant lastActivityAt;
-
-    @Builder.Default
-    private Instant createdAt = Instant.now();
-
-    @Builder.Default
-    private boolean revoked = false;
 }

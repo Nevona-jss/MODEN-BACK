@@ -1,44 +1,52 @@
 package com.moden.modenapi.modules.product.model;
 
-import java.math.BigDecimal;
-import java.util.UUID;
-import com.moden.modenapi.modules.studio.model.HairStudio;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.UuidGenerator;
+import java.math.BigDecimal;
+import java.util.UUID;
 
 /**
- * Represents a product (e.g., hair care item) sold by a specific hair studio.
+ * Represents a product (e.g., shampoo, color, or other item)
+ * owned and managed by a specific hair studio.
+ * Each salon registers and manages its own products.
  */
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(of = "id")
 @Entity
 @Table(name = "studio_product")
-public class StudioProduct {
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+public class StudioProduct extends BaseEntity {
 
-    @Id
-    @GeneratedValue
-    @UuidGenerator
-    @Column(columnDefinition = "uniqueidentifier")
-    private UUID id;   // ✅ UUID instead of Long
+    // 🔹 Belongs to which studio
+    @Column(name = "studio_id", columnDefinition = "uniqueidentifier", nullable = false)
+    private UUID studioId; // FK → hair_studio_detail.id
 
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "hair_studio_id")
-    private HairStudio studio;
-
+    // 🔹 Product fullName (required)
     @Column(nullable = false, length = 150)
     private String name;
 
-    private String field;  // e.g. Haircare, Styling
-    private String type;   // e.g. Shampoo, Conditioner
+    // 🔹 Product category (e.g., Haircare, Styling)
+    @Column(length = 100)
+    private String category;
 
+    // 🔹 Product type (e.g., Shampoo, Conditioner, Color)
+    @Column(length = 100)
+    private String type;
+
+    // 🔹 Image URL or path (optional)
+    @Column(name = "image", length = 500)
+    private String image;
+
+    // 🔹 Price of the product
     @Column(precision = 10, scale = 2)
     private BigDecimal price;
 
-    @Builder.Default
-    private int stock = 0; // ✅ for quantity management
+    // 🔹 Stock quantity (default 0)
+    @Column(nullable = false)
+    private int stock = 0;
 }

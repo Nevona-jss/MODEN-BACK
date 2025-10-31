@@ -34,71 +34,66 @@ public class SecurityConfig {
                 // CORS configuration
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                // Disable CSRF for token-based API
+                // Disable CSRF since using JWT
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // Stateless session management (JWT)
+                // Stateless JWT session
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 // Authorization rules
                 .authorizeHttpRequests(auth -> auth
-                        // Allow preflight
+                        // Allow preflight requests
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // Public auth & docs endpoints
+                        // ✅ Public endpoints (auth + swagger)
                         .requestMatchers(
                                 "/api/auth/signup",
                                 "/api/auth/signin",
                                 "/api/auth/refresh",
+                                "/api/studios/signup", // allow studio signup if needed
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
-                                "/v3/api-docs",
                                 "/swagger-resources/**",
                                 "/webjars/**"
                         ).permitAll()
 
-                        // Role-based protections
+                        // ✅ Role-based protections
                         .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
                         .requestMatchers("/api/designers/**").hasAuthority("DESIGNER")
                         .requestMatchers("/api/studios/**").hasAuthority("HAIR_STUDIO")
                         .requestMatchers("/api/customers/**").hasAuthority("CUSTOMER")
 
-                        // everything else requires authentication
+                        // ✅ everything else requires JWT auth
                         .anyRequest().authenticated()
                 )
 
-                // Add JWT filter
+                // Add JWT filter before default UsernamePassword filter
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    /**
-     * CORS config: use allowedOriginPatterns when allowCredentials = true
-     */
+    // ----------------------------------------------------------------------
+    // 🔹 CORS CONFIGURATION
+    // ----------------------------------------------------------------------
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
 
-        // Use patterns to support IPs, wildcards, localhost variations
         cfg.setAllowedOriginPatterns(List.of(
-                "http://localhost:3000",
                 "http://localhost:5173",
                 "http://localhost:8080",
-                "http://192.168.*:*",
                 "https://moden-kappa.vercel.app"
         ));
 
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
-
-        // important for cookies
         cfg.setAllowCredentials(true);
-
-        // expose Set-Cookie so frontend can see it if needed
-        cfg.setExposedHeaders(List.of(HttpHeaders.SET_COOKIE, HttpHeaders.AUTHORIZATION));
-
+        cfg.setExposedHeaders(List.of(
+                HttpHeaders.SET_COOKIE,
+                HttpHeaders.AUTHORIZATION
+        ));
         cfg.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -106,15 +101,19 @@ public class SecurityConfig {
         return source;
     }
 
+    // ----------------------------------------------------------------------
+    // 🔹 AuthenticationManager (for @Autowired anywhere)
+    // ----------------------------------------------------------------------
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 
-    // handy bean for password hashing
+    // ----------------------------------------------------------------------
+    // 🔹 Password encoder bean (for AuthLocal / Studio passwords)
+    // ----------------------------------------------------------------------
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
+        return new BCryptPasswordEncoder();
     }
-
 }

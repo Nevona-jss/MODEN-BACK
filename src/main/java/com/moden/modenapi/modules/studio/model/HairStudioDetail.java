@@ -1,52 +1,82 @@
 package com.moden.modenapi.modules.studio.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.moden.modenapi.common.enums.Position;
+import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
-/**
- * ✅ HairStudioDetail
- * Extended salon information linked one-to-one with HairStudio.
- */
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@SuperBuilder
 @Entity
 @Table(name = "hair_studio_detail")
+@AttributeOverride(name = "fullName", column = @Column(name = "studio_name", length = 150))
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-public class HairStudioDetail  extends BaseEntity {
+public class HairStudioDetail extends BaseEntity {
 
-    @Id
-    @Column(name = "hair_studio_id", columnDefinition = "uniqueidentifier")
-    private UUID id;
+    @Column(name = "user_id", columnDefinition = "uniqueidentifier", nullable = false)
+    private UUID userId;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @MapsId // share same PK as HairStudio
-    @JoinColumn(name = "hair_studio_id")
-    @JsonIgnoreProperties({"detail"}) // prevent infinite recursion
-    private HairStudio studio;
+    @Column(name = "studio_code", unique = true, length = 50)
+    private String idForLogin;
 
-    // 🔹 Optional descriptive fields
+    @Column(nullable = false, length = 100)
+    private String businessNo;
+
+    @Column(nullable = false, length = 100)
+    private String ownerName;
+
+    @Column(length = 50)
+    private String studioPhone;
+
+    @Column(length = 255)
+    private String address;
+
+    @Column(length = 500)
+    private String logoImageUrl;
+
+    @Column(length = 500)
+    private String bannerImageUrl;
+
+    @Column(length = 255)
+    private String profileImageUrl;
+
     @Lob
-    private String description; // long-form intro text
+    private String description;
 
     @Column(length = 200)
-    private String parkingInfo; // e.g., “Free parking available”
+    private String parkingInfo;
 
     @Column(length = 255)
-    private String naverUrl; // e.g., Naver Place link
+    private String naverUrl;
 
     @Column(length = 255)
-    private String blogUrl; // e.g., Naver Blog link
+    private String kakaoUrl;
 
     @Column(length = 255)
-    private String instagramUrl; // e.g., salon Instagram link
+    private String instagramUrl;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role = Role.HAIR_STUDIO;
+
+    @Enumerated(EnumType.STRING)
+    private Position position = Position.STUDIO_OWNER;
 
     @Column(columnDefinition = "nvarchar(max)")
-    private String openHoursJson; // JSON-encoded open hours
+    private String openHoursJson;
+
+    @Column(precision = 10, scale = 7)
+    private BigDecimal latitude;
+
+    @Column(precision = 10, scale = 7)
+    private BigDecimal longitude;
 }

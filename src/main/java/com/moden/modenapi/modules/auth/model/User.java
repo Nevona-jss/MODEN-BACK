@@ -1,14 +1,9 @@
 package com.moden.modenapi.modules.auth.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.moden.modenapi.common.enums.Gender;
-import com.moden.modenapi.common.enums.UserType;
 import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.UuidGenerator;
-import java.time.LocalDate;
-import java.util.UUID;
 
 @Getter
 @Setter
@@ -16,43 +11,14 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name="users", uniqueConstraints=@UniqueConstraint(columnNames={"phone"}))
-@JsonIgnoreProperties({
-        "hibernateLazyInitializer",
-        "handler",
-        "reservations",
-        "designerDetail",
-        "passwordHash"
-})
-public class User extends BaseEntity {
-    @Id
-    @GeneratedValue
-    @UuidGenerator
-    @Column(columnDefinition="uniqueidentifier")
-    private UUID id;
+@Table(name = "users", uniqueConstraints = @UniqueConstraint(columnNames = {"phone"}))
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+public class User  extends BaseEntity {
 
-    @Column(nullable=false, length=100)
-    private String name;
+    @Column(length = 150)
+    protected String fullName;   // ✅ shared across entities (user, studio, etc.)
 
-    @Column(nullable=false, length=20)
+    @Column(nullable = false, length = 20)
     private String phone;
 
-    @Column(length=255)
-    private String email;
-
-    private LocalDate birthdate;
-
-    @Enumerated(EnumType.STRING)
-    private Gender gender;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable=false)
-    private UserType userType = UserType.CUSTOMER;
-
-    @Column(nullable=false)
-    private boolean consentMarketing = false;
-    @Column(length = 255)
-    private String address;
-
-    private String naverId;
 }

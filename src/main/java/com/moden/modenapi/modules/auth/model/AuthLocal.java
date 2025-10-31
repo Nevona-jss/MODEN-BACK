@@ -1,8 +1,10 @@
 package com.moden.modenapi.modules.auth.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -12,34 +14,37 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name="auth_local")
+@Table(
+        name = "auth_local",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_auth_local_user_id", columnNames = "user_id")
+        },
+        indexes = {
+                @Index(name = "ix_auth_local_user_id", columnList = "user_id")
+        }
+)
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-public class AuthLocal {
+public class AuthLocal extends BaseEntity {
 
-    @Id
-    @Column(columnDefinition="uniqueidentifier")
+    // 🔹 FK → users.id
+    @Column(name = "user_id", columnDefinition = "uniqueidentifier", nullable = false)
     private UUID userId;
 
-    @OneToOne(fetch=FetchType.LAZY)
-    @MapsId
-    @JoinColumn(name="user_id")
-    @JsonIgnoreProperties({"authLocal", "designerDetail"})
-    private User user;
-
-    @Column(nullable=false, length=255)
+    @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
     @Builder.Default
-    @Column(nullable=false)
+    @Column(name = "password_updated_at", nullable = false)
     private Instant passwordUpdatedAt = Instant.now();
 
     @Builder.Default
-    @Column(nullable=false)
+    @Column(name = "failed_attempts", nullable = false)
     private int failedAttempts = 0;
 
+    @Column(name = "locked_until")
     private Instant lockedUntil;
 
     @Builder.Default
-    @Column(nullable=false)
+    @Column(name = "force_reset", nullable = false)
     private boolean forceReset = false;
 }

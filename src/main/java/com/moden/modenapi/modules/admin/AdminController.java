@@ -3,104 +3,97 @@ package com.moden.modenapi.modules.admin;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.modules.studio.dto.StudioCreateReq;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
-import com.moden.modenapi.modules.studio.service.HairStudioService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.media.ExampleObject;
-import io.swagger.v3.oas.annotations.parameters.RequestBody;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.net.URI;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Tag(name = "Admin", description = "System administration APIs (ADMIN role only)")
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('ADMIN')") // ensure only admins can call these endpoints
-@SecurityRequirement(name = "bearerAuth") // display auth lock in Swagger UI (optional)
+@PreAuthorize("hasAuthority('ADMIN')") // ✅ 권한 접두어 ROLE_ 필수
+@SecurityRequirement(name = "bearerAuth")
 public class AdminController {
 
     private final AdminService adminService;
-    private final HairStudioService service;
 
-    // ------------ getAllUsers ------------
+    // ----------------------------------------------------------------------
+    // 🔹 CREATE STUDIO
+    // ----------------------------------------------------------------------
     @Operation(
-            summary = "List all users",
-            description = "Fetch the list of all users across roles (ADMIN only)."
+            summary = "Create a new hair studio (auto-registers ownerName)",
+            description = """
+                    Creates a new hair studio associated with a user ID.
+                    Required fields: `name`, `businessNo`, `ownerName`, and `password`.
+                    You can also upload logo/banner/profile images.
+                    """
     )
-    @GetMapping("/users")
-    public ResponseEntity<ResponseMessage<?>> getAllUsers() {
-        var users = adminService.getAllUsers();
-        return ResponseEntity.ok(ResponseMessage.success("User list retrieved successfully", users));
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Studio created successfully",
+                    content = @Content(schema = @Schema(implementation = StudioRes.class))),
+            @ApiResponse(responseCode = "400", description = "Validation error"),
+            @ApiResponse(responseCode = "409", description = "Duplicate studio ID")
+    })
+    @PostMapping("/studios/create/{userId}")
+    public ResponseEntity<ResponseMessage<StudioRes>> createStudio(
+            @PathVariable UUID userId,
+            @Valid @RequestPart("data") StudioCreateReq req,       // ✅ JSON 필드
+            @RequestPart(value = "logoFile", required = false) MultipartFile logoFile,
+            @RequestPart(value = "bannerFile", required = false) MultipartFile bannerFile,
+            @RequestPart(value = "profileFile", required = false) MultipartFile profileFile
+    ) {
+        StudioRes result = adminService.createStudio(userId, req, logoFile, bannerFile, profileFile);
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(ResponseMessage.success("Studio created successfully", result));
     }
 
-    // ------------ getAllReservations ------------
-    @Operation(
-            summary = "List all reservations",
-            description = "Fetch the list of all reservations in the system (ADMIN only)."
-    )
-    @GetMapping("/reservations")
-    public ResponseEntity<ResponseMessage<?>> getAllReservations() {
-        var list = adminService.getAllReservations();
-        return ResponseEntity.ok(ResponseMessage.success("Reservation list retrieved successfully", list));
+    // ----------------------------------------------------------------------
+    // 🔹 GET SINGLE STUDIO
+    // ----------------------------------------------------------------------
+    @Operation(summary = "Get a studio by ID", description = "Retrieve details of a single active studio (ADMIN only).")
+    @GetMapping("/studios/read/{studioId}") // ✅ {studioId} 괄호 누락 수정
+    public ResponseEntity<ResponseMessage<StudioRes>> getStudio(@PathVariable UUID studioId) {
+        StudioRes studio = adminService.getStudio(studioId);
+        return ResponseEntity.ok(ResponseMessage.success("Studio retrieved successfully", studio));
     }
 
-    // ------------ create studio ------------
-    @Operation(
-            summary = "Create a new hair studio (auto-registers owner)",
-            description = "Creates a hair studio. **Required fields**: `name`, `businessNo`, `owner`."
-    )
-    @RequestBody(
-            description = "Only required fields shown in example",
-            required = true,
-            content = @Content(
-                    schema = @Schema(implementation = StudioCreateReq.class),
-                    examples = @ExampleObject(value = """
-      {
-        "name": "Moden Hair",
-        "businessNo": "123-45-67890",
-        "owner": "Alice Kim"
-      }
-    """)
-            )
-    )
-    @PostMapping("/studios/register")
-    public ResponseEntity<ResponseMessage<StudioRes>> create(@Valid @org.springframework.web.bind.annotation.RequestBody StudioCreateReq req) {
-        var studio = service.create(req);
-        URI location = URI.create("/api/studios/" + studio.id());
-        return ResponseEntity.created(location)
-                .body(ResponseMessage.success("Hair studio created successfully", studio));
-    }
-
-    // ------------ list studios ------------
-    @Operation(summary = "List all hair studios", description = "Retrieve all registered hair studios.")
-    @GetMapping("/studios")
-    public ResponseEntity<ResponseMessage<List<StudioRes>>> list() {
-        var studios = service.list();
+    // ----------------------------------------------------------------------
+    // 🔹 GET ALL STUDIOS
+    // ----------------------------------------------------------------------
+    @Operation(summary = "List all active studios", description = "Retrieve all active (non-deleted) studios (ADMIN only).")
+    @GetMapping("/studios/list")
+    public ResponseEntity<ResponseMessage<List<StudioRes>>> getAllStudios() {
+        List<StudioRes> studios = adminService.getAllStudios();
         return ResponseEntity.ok(ResponseMessage.success("Studio list retrieved successfully", studios));
     }
 
-    // ------------ get studio by id ------------
-    @Operation(summary = "Get a hair studio by login code", description = "Retrieve one studio by its idForLogin (login code).")
-    @GetMapping("/studios/code/{idForLogin}")
-    public ResponseEntity<ResponseMessage<StudioRes>> getByCode(
-            @Parameter(description = "Studio login ID (idForLogin)", required = true, example = "ST-MODEN-72143")
-            @PathVariable String idForLogin) {
-        var studio = service.get(idForLogin);
-        return ResponseEntity.ok(ResponseMessage.success("Studio retrieved successfully", studio));
+    // ----------------------------------------------------------------------
+    // 🔹 DELETE STUDIO (SOFT DELETE)
+    // ----------------------------------------------------------------------
+    @Operation(summary = "Soft delete a studio", description = "Marks a studio as deleted without removing it from the database (ADMIN only).")
+    @DeleteMapping("/studios/delete/{studioId}") // ✅ 괄호 누락 수정
+    public ResponseEntity<ResponseMessage<?>> deleteStudio(@PathVariable UUID studioId) {
+        adminService.deleteStudio(studioId);
+        return ResponseEntity.ok(ResponseMessage.success("Studio deleted successfully"));
     }
+
+    // ----------------------------------------------------------------------
+    // 🔹 USERS (Future Extension)
+    // ----------------------------------------------------------------------
+    // 필요 시 getAllUsers(), getAllReservations() 추가
 }

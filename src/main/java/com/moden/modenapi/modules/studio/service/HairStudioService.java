@@ -1,198 +1,152 @@
 package com.moden.modenapi.modules.studio.service;
 
-import com.moden.modenapi.common.enums.UserType;
 import com.moden.modenapi.common.service.BaseService;
-import com.moden.modenapi.common.utils.StudioIdGenerator;
-import com.moden.modenapi.modules.auth.model.User;
-import com.moden.modenapi.modules.auth.repository.UserRepository;
-import com.moden.modenapi.modules.studio.dto.StudioCreateReq;
+import com.moden.modenapi.common.service.FileStorageService;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
-import com.moden.modenapi.modules.studio.model.HairStudio;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
-import com.moden.modenapi.modules.studio.repository.HairStudioRepository;
+import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
+import com.moden.modenapi.security.JwtProvider;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.Authentication;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.Optional;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
 @Transactional
 @RequiredArgsConstructor
-public class HairStudioService extends BaseService<HairStudio, UUID> {
+public class HairStudioService extends BaseService<HairStudioDetail> {
 
-    private final HairStudioRepository repo;
-    private final UserRepository userRepository;
+    private final HairStudioDetailRepository studioRepository;
+    private final JwtProvider jwtProvider;
+    private final HttpServletRequest request;
+    private final FileStorageService fileStorageService;
 
     @Override
-    protected JpaRepository<HairStudio, UUID> getRepository() {
-        return repo;
+    protected HairStudioDetailRepository getRepository() {
+        return studioRepository;
     }
 
-    /**
-     * 🔹 Create new Hair Studio + owner auto registration (ownerPhone is optional)
-     */
-    public StudioRes create(StudioCreateReq req) {
+    // ----------------------------------------------------------------------
+    // 🔹 Get currently logged-in studio profile (JWT)
+    // ----------------------------------------------------------------------
+    @Transactional(readOnly = true)
+    public StudioRes getCurrentStudio() {
+        UUID userId = extractUserIdFromToken();
+        HairStudioDetail studio = studioRepository.findByUserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio profile not found"));
+        return mapToRes(studio);
+    }
 
-        // 1️⃣ Register or find owner (only if ownerPhone provided)
-        if (req.ownerPhone() != null && !req.ownerPhone().isBlank()) {
-            userRepository.findByPhone(req.ownerPhone())
-                    .orElseGet(() -> {
-                        User newOwner = User.builder()
-                                .name(req.owner())
-                                .phone(req.ownerPhone())
-                                .userType(UserType.HAIR_STUDIO)
-                                .build();
-                        return userRepository.save(newOwner);
-                    });
+    // ----------------------------------------------------------------------
+    // 🔹 UPDATE STUDIO PROFILE (PATCH + file upload)
+    // ----------------------------------------------------------------------
+    public StudioRes updateStudio(UUID studioId,
+                                  StudioUpdateReq req,
+                                  MultipartFile logoFile,
+                                  MultipartFile bannerFile,
+                                  MultipartFile profileFile) {
+
+        HairStudioDetail studio = studioRepository.findById(studioId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
+
+        if (studio.getDeletedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio has been deleted");
         }
 
-        // 2️⃣ Build HairStudio
-        HairStudio studio = HairStudio.builder()
-                .idForLogin(StudioIdGenerator.generateId(req.name()))
-                .name(req.name())
-                .businessNo(req.businessNo())
-                .owner(req.owner())
-                .ownerPhone(req.ownerPhone())
-                .studioPhone(req.studioPhone())
-                .address(req.address())
-                .logo(req.logo())
-                .instagram(req.instagram())
-                .naver(req.naver())
-                .build();
+        // ✅ Basic info
+        if (req.studioPhone() != null) studio.setStudioPhone(req.studioPhone());
+        if (req.address() != null) studio.setAddress(req.address());
+        if (req.description() != null) studio.setDescription(req.description());
+        if (req.parkingInfo() != null) studio.setParkingInfo(req.parkingInfo());
+        if (req.latitude() != null) studio.setLatitude(req.latitude());
+        if (req.longitude() != null) studio.setLongitude(req.longitude());
 
-        // 3️⃣ Create detail
-        HairStudioDetail detail = HairStudioDetail.builder()
-                .studio(studio)
-                .build();
-        studio.setDetail(detail);
+        // ✅ Social links
+        if (req.instagram() != null) studio.setInstagramUrl(req.instagram());
+        if (req.naver() != null) studio.setNaverUrl(req.naver());
+        if (req.kakao() != null) studio.setKakaoUrl(req.kakao());
 
-        // 4️⃣ Save
-        HairStudio saved = save(studio);
+        // ✅ Handle uploaded files (uploads folder)
+        try {
+            if (logoFile != null && !logoFile.isEmpty()) {
+                studio.setLogoImageUrl(fileStorageService.saveFile(logoFile));
+            }
+            if (bannerFile != null && !bannerFile.isEmpty()) {
+                studio.setBannerImageUrl(fileStorageService.saveFile(bannerFile));
+            }
+            if (profileFile != null && !profileFile.isEmpty()) {
+                studio.setProfileImageUrl(fileStorageService.saveFile(profileFile));
+            }
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "File upload failed: " + e.getMessage());
+        }
 
-        // 5️⃣ Return DTO
-        return new StudioRes(
-                saved.getId(),
-                saved.getIdForLogin(),
-                saved.getName(),
-                saved.getBusinessNo(),
-                saved.getOwner(),
-                saved.getOwnerPhone(),
-                saved.getStudioPhone(),
-                saved.getAddress(),
-                saved.getLogo(),
-                saved.getInstagram(),
-                saved.getNaver()
-        );
+        studio.setUpdatedAt(Instant.now());
+        studioRepository.save(studio);
+
+        return mapToRes(studio);
     }
 
-    @Transactional(readOnly = true)
-    public List<StudioRes> list() {
-        return getAll().stream()
-                .map(s -> new StudioRes(
-                        s.getId(),
-                        s.getIdForLogin(),
-                        s.getName(),
-                        s.getBusinessNo(),
-                        s.getOwner(),
-                        s.getOwnerPhone(),
-                        s.getStudioPhone(),
-                        s.getAddress(),
-                        s.getLogo(),
-                        s.getInstagram(),
-                        s.getNaver()
-                ))
-                .toList();
+    // ----------------------------------------------------------------------
+    // 🔹 Soft Delete
+    // ----------------------------------------------------------------------
+    public void deleteStudio(UUID studioId) {
+        HairStudioDetail studio = studioRepository.findById(studioId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
+
+        if (studio.getDeletedAt() != null)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio already deleted");
+
+        studio.setDeletedAt(Instant.now());
+        studioRepository.save(studio);
     }
 
-    @Transactional(readOnly = true)
-    public StudioRes get(String idForLogin) {
-        HairStudio s = repo.findByIdForLogin(idForLogin)
-                .orElseThrow(() -> new IllegalArgumentException("Studio not found: " + idForLogin));
+    // ----------------------------------------------------------------------
+    // 🔹 Token helper
+    // ----------------------------------------------------------------------
+    private UUID extractUserIdFromToken() {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or invalid Authorization header");
+        }
+
+        String token = authHeader.substring(7).trim();
+        if (!jwtProvider.validateToken(token)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired JWT token");
+        }
+
+        return UUID.fromString(jwtProvider.getUserId(token));
+    }
+
+    // ----------------------------------------------------------------------
+    // 🔹 Mapper
+    // ----------------------------------------------------------------------
+    private StudioRes mapToRes(HairStudioDetail s) {
         return new StudioRes(
                 s.getId(),
                 s.getIdForLogin(),
-                s.getName(),
                 s.getBusinessNo(),
-                s.getOwner(),
-                s.getOwnerPhone(),
+                s.getOwnerName(),
                 s.getStudioPhone(),
+                null,
                 s.getAddress(),
-                s.getLogo(),
-                s.getInstagram(),
-                s.getNaver()
+                s.getDescription(),
+                s.getProfileImageUrl(),
+                s.getLogoImageUrl(),
+                s.getBannerImageUrl(),
+                s.getInstagramUrl(),
+                s.getNaverUrl(),
+                s.getKakaoUrl(),
+                s.getParkingInfo(),
+                s.getLatitude(),
+                s.getLongitude()
         );
-    }
-
-    /**
-     * Update studio profile (only ADMIN or owning HAIR_STUDIO allowed).
-     * Authentication passed from controller.
-     */
-    public StudioRes updateProfile(UUID id, StudioUpdateReq req, Authentication auth) {
-        HairStudio s = getById(id); // throws if not found
-
-        // check authority
-        boolean isAdmin = auth.getAuthorities().stream()
-                .anyMatch(a -> "ADMIN".equals(a.getAuthority()));
-
-        if (!isAdmin) {
-            // resolve caller phone: try parse auth name as UUID -> load user -> get phone
-            String callerPhone = resolveCallerPhone(auth);
-            String studioOwnerPhone = Optional.ofNullable(s.getOwnerPhone()).orElse("");
-
-            if (!studioOwnerPhone.equals(callerPhone)) {
-                throw new AccessDeniedException("You are not allowed to update this studio profile");
-            }
-        }
-
-        // apply updates (only when not null)
-        if (req.ownerPhone() != null) s.setOwnerPhone(req.ownerPhone());
-        if (req.studioPhone() != null) s.setStudioPhone(req.studioPhone());
-        if (req.address() != null) s.setAddress(req.address());
-        if (req.logo() != null) s.setLogo(req.logo());
-        if (req.instagram() != null) s.setInstagram(req.instagram());
-        if (req.naver() != null) s.setNaver(req.naver());
-
-        HairStudio saved = save(s);
-
-        return new StudioRes(
-                saved.getId(),
-                saved.getIdForLogin(),
-                saved.getName(),
-                saved.getBusinessNo(),
-                saved.getOwner(),
-                saved.getOwnerPhone(),
-                saved.getStudioPhone(),
-                saved.getAddress(),
-                saved.getLogo(),
-                saved.getInstagram(),
-                saved.getNaver()
-        );
-    }
-
-    /**
-     * Helper: derive caller's phone from Authentication.
-     * - If auth.getName() is a UUID, try to load User by id and return phone.
-     * - Otherwise assume auth.getName() is the phone.
-     *
-     * Adjust this if your JWT principal contains a different value.
-     */
-    private String resolveCallerPhone(Authentication auth) {
-        String name = auth.getName();
-        try {
-            UUID uid = UUID.fromString(name);
-            return userRepository.findById(uid)
-                    .map(User::getPhone)
-                    .orElse(name);
-        } catch (IllegalArgumentException ex) {
-            // not a UUID -> treat as phone (common)
-            return name;
-        }
     }
 }
