@@ -32,9 +32,7 @@ public class AdminController {
 
     private final AdminService adminService;
 
-    // ----------------------------------------------------------------------
-// 🔹 CREATE STUDIO (ADMIN)
-// ----------------------------------------------------------------------
+    // -------------------------Create---------------------------------------------
     @Operation(
             summary = "Create a new hair studio (auto-creates owner by phone)",
             description = """
