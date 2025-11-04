@@ -25,6 +25,22 @@ public class DesignerController {
     private final DesignerService designerService;
 
     // ----------------------------------------------------------------------
+    // 🔹 STUDIO/ADMIN: Create designer
+    // ----------------------------------------------------------------------
+    @Operation(
+            summary = "Create designer (by Studio/Admin)",
+            description = "Creates a new designer. `hairStudioId` is required in the request body."
+    )
+    @PostMapping
+    public ResponseEntity<ResponseMessage<DesignerResponse>> createDesigner(
+            @Valid @RequestBody DesignerCreateDto req
+    ) {
+        var created = designerService.createDesigner(req);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ResponseMessage.success("Designer created successfully", created));
+    }
+
+    // ----------------------------------------------------------------------
     // 🔹 DESIGNER: Update own profile
     // ----------------------------------------------------------------------
     @Operation(
@@ -41,9 +57,6 @@ public class DesignerController {
         return ResponseEntity.ok(ResponseMessage.success("Profile updated successfully", updated));
     }
 
-
-
-
     // ----------------------------------------------------------------------
     // 🔹 DESIGNER: Get current profile (/me)
     // ----------------------------------------------------------------------
@@ -57,5 +70,46 @@ public class DesignerController {
         return ResponseEntity.ok(ResponseMessage.success("Designer profile fetched successfully", data));
     }
 
+    // ----------------------------------------------------------------------
+    // 🔹 ADMIN/STUDIO: Get designer by ID
+    // ----------------------------------------------------------------------
+    @Operation(
+            summary = "Get designer by ID",
+            description = "Returns a single designer profile (requires admin/studio permission)."
+    )
+    @GetMapping("/{designerId}")
+    public ResponseEntity<ResponseMessage<DesignerResponse>> getDesigner(
+            @PathVariable UUID designerId
+    ) {
+        var data = designerService.getProfile(designerId);
+        return ResponseEntity.ok(ResponseMessage.success("Designer fetched successfully", data));
+    }
 
+    // ----------------------------------------------------------------------
+    // 🔹 ADMIN/STUDIO: List all designers by studio
+    // ----------------------------------------------------------------------
+    @Operation(
+            summary = "List designers by studio",
+            description = "Returns designers that belong to the given studio (active only)."
+    )
+    @GetMapping("/studios/{studioId}")
+    public ResponseEntity<ResponseMessage<List<DesignerResponse>>> listByStudio(
+            @PathVariable UUID studioId
+    ) {
+        var list = designerService.getAllDesignersByStudio(studioId);
+        return ResponseEntity.ok(ResponseMessage.success("Designer list fetched successfully", list));
+    }
+
+    // ----------------------------------------------------------------------
+    // 🔹 ADMIN/STUDIO: Soft delete designer
+    // ----------------------------------------------------------------------
+    @Operation(
+            summary = "Soft delete designer",
+            description = "Marks the designer as deleted (soft delete)."
+    )
+    @DeleteMapping("/{designerId}")
+    public ResponseEntity<Void> deleteDesigner(@PathVariable UUID designerId) {
+        designerService.deleteDesigner(designerId);
+        return ResponseEntity.noContent().build();
+    }
 }

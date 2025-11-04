@@ -23,34 +23,24 @@ import java.util.List;
 
 @Configuration
 @RequiredArgsConstructor
-@EnableMethodSecurity // enables @PreAuthorize, @RolesAllowed, etc.
+@EnableMethodSecurity
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter; // 아래 2) 클래스
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // CORS configuration
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-
-                // Disable CSRF since using JWT
                 .csrf(AbstractHttpConfigurer::disable)
-
-                // Stateless JWT session
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                // Authorization rules
                 .authorizeHttpRequests(auth -> auth
-                        // Allow preflight requests
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                        // ✅ Public endpoints (auth + swagger)
                         .requestMatchers(
                                 "/api/auth/signup",
                                 "/api/auth/signin",
                                 "/api/auth/refresh",
-                                "/api/studios/signup", // allow studio signup if needed
+                                "/api/auth/me",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
@@ -58,60 +48,44 @@ public class SecurityConfig {
                                 "/webjars/**"
                         ).permitAll()
 
-                        // ✅ Role-based protections
-                        .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
-                        .requestMatchers("/api/designers/**").hasAuthority("DESIGNER")
-                        .requestMatchers("/api/studios/**").hasAuthority("HAIR_STUDIO")
-                        .requestMatchers("/api/customers/**").hasAuthority("CUSTOMER")
+                        // ★ 역할별 보호 (hasRole 사용)
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/designers/**").hasRole("DESIGNER")
+                        .requestMatchers("/api/studios/**").hasRole("HAIR_STUDIO")
+                        .requestMatchers("/api/customers/**").hasRole("CUSTOMER")
 
-                        // ✅ everything else requires JWT auth
+                        // 그 외는 인증만 필요
                         .anyRequest().authenticated()
                 )
-
-                // Add JWT filter before default UsernamePassword filter
+                // ★ JWT 필터를 UsernamePasswordAuthenticationFilter 앞에 삽입
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 CORS CONFIGURATION
-    // ----------------------------------------------------------------------
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-
         cfg.setAllowedOriginPatterns(List.of(
                 "http://localhost:5173",
                 "http://localhost:8080",
                 "https://moden-kappa.vercel.app"
         ));
-
-        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
         cfg.setAllowCredentials(true);
-        cfg.setExposedHeaders(List.of(
-                HttpHeaders.SET_COOKIE,
-                HttpHeaders.AUTHORIZATION
-        ));
+        cfg.setExposedHeaders(List.of(HttpHeaders.SET_COOKIE, HttpHeaders.AUTHORIZATION));
         cfg.setMaxAge(3600L);
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);
         return source;
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 AuthenticationManager (for @Autowired anywhere)
-    // ----------------------------------------------------------------------
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
+        return cfg.getAuthenticationManager();
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 Password encoder bean (for AuthLocal / Studio passwords)
-    // ----------------------------------------------------------------------
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();

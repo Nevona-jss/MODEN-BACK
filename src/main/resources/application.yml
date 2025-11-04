@@ -4,25 +4,21 @@ server:
     context-path: /
 
 spring:
-  # 🔹 optional import (for secrets like DB creds)
   config:
     import: optional:classpath:application-secret.yml
-
   application:
     name: moden-api
 
-  # ✅ Database Configuration (MSSQL)
   datasource:
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASS}
 
-  # ✅ JPA & Hibernate
   jpa:
     database-platform: org.hibernate.dialect.SQLServerDialect
     hibernate:
-      ddl-auto: update        # or validate / none on production
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
@@ -30,25 +26,11 @@ spring:
         jdbc:
           time_zone: UTC
 
-  # ✅ File Upload Config
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
 
-# ✅ File storage (images, etc.)
-file:
-  upload-dir: uploads/services
-  base-url: http://localhost:${server.port}/uploads/services
-
-# ✅ JWT Config
-app:
-  jwt:
-    secret: ${JWT_SECRET}
-    access-expiration-ms: 86400000        # 1 day
-    refresh-expiration-ms: 2592000000     # 30 days
-
-# ✅ Swagger & API Docs
 springdoc:
   api-docs:
     enabled: true
@@ -60,15 +42,36 @@ springdoc:
   paths-to-match: /**
   default-produces-media-type: application/json
 
-# ✅ Logging
 logging:
   level:
     root: INFO
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql: TRACE
     com.moden.modenapi: DEBUG
-
-# ✅ ANSI colors (console log colors)
   output:
     ansi:
       enabled: ALWAYS
+
+file:
+  upload-dir: uploads/services
+  base-url: http://localhost:${server.port}/uploads/services
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-expiration-ms: 86400000
+    refresh-expiration-ms: 2592000000
+
+# ---------- CHOOSE ONE OF THE TWO FIREBASE OPTIONS BELOW ----------
+
+# Option A: Base64 service account from environment (recommended for CI/servers)
+firebase:
+  projectId: ${FIREBASE_PROJECT_ID:}
+  credentials:
+    base64: ${FIREBASE_SA_BASE64:}
+
+# Option B: Classpath JSON file (comment out Option A if you use this)
+# firebase:
+#   projectId: moden-bb3c2
+#   credentials:
+#     file: classpath:/firebase/serviceAccount.json

@@ -1,17 +1,20 @@
 package com.moden.modenapi.modules.designer.dto;
 
-import com.moden.modenapi.common.enums.Position;
 import com.moden.modenapi.common.enums.Role;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record DesignerResponse(
-        UUID designerId,
+        UUID id,
         UUID userId,
         UUID studioId,
         String idForLogin,
-        String bio,
-        String portfolioUrl,
+        String phone,
         Role role,
-        Position position
+        String bio,
+        List<PortfolioItemRes> portfolio,
+        Instant createdAt,
+        Instant updatedAt
 ) {}

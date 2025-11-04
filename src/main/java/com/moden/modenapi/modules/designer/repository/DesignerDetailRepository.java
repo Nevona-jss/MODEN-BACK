@@ -8,7 +8,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface DesignerDetailRepository extends BaseRepository<DesignerDetail, UUID> {
+
     boolean existsByIdForLogin(String idForLogin);
+    Optional<DesignerDetail> findByIdForLoginAndDeletedAtIsNull(String idForLogin);
     Optional<DesignerDetail> findByUserId(UUID userId);
     Optional<DesignerDetail> findActiveById(UUID id);
     List<DesignerDetail> findAllActiveByHairStudioId(UUID studioId);

@@ -23,6 +23,7 @@ public class OpenApiConfig {
                         .description("Hair Salon Platform - Backend API (JWT Authentication Enabled)")
                         .version("v1.0.0"))
                 .addServersItem(new Server().url("https://moden-back.onrender.com").description("Production"))
+                .addServersItem(new Server().url("http://localhost:8080").description("Production"))
                 .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
                 .components(new Components()
                         .addSecuritySchemes(securitySchemeName,

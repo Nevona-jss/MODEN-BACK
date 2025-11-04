@@ -18,7 +18,6 @@ import java.util.UUID;
 @SuperBuilder
 @Entity
 @Table(name = "hair_studio_detail")
-@AttributeOverride(name = "fullName", column = @Column(name = "studio_name", length = 150))
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class HairStudioDetail extends BaseEntity {
 
@@ -63,10 +62,6 @@ public class HairStudioDetail extends BaseEntity {
 
     @Column(length = 255)
     private String instagramUrl;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Role role = Role.HAIR_STUDIO;
 
     @Enumerated(EnumType.STRING)
     private Position position = Position.STUDIO_OWNER;

@@ -3,6 +3,7 @@ package com.moden.modenapi.modules.auth.controller;
 import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.utils.CookieUtil;
+import com.moden.modenapi.modules.auth.dto.UserMeResponse;
 import com.moden.modenapi.modules.auth.service.AuthService;
 import com.moden.modenapi.modules.auth.service.UserSessionService;
 import com.moden.modenapi.modules.customer.dto.CustomerSignInRequest;
@@ -62,29 +63,23 @@ public class AuthController {
     // ----------------------------------------------------------------------
     // 🔹 SIGN IN (NAME + PHONE)
     // ----------------------------------------------------------------------
+
     @PostMapping("/signin")
     public ResponseEntity<ResponseMessage<Map<String, String>>> signIn(
             @RequestBody CustomerSignInRequest req,
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        try {
-            var tokens = authService.signInByNameAndPhone(req);
+        var tokens = authService.signInByNameAndPhone(req);
 
-            // ✅ Store refresh token in secure cookie
-            CookieUtil.setRefreshTokenCookie(response, request, tokens.refreshToken());
+        // ✅ 1) Refresh token faqat cookie’da
+        CookieUtil.setRefreshTokenCookie(response, request, tokens.refreshToken());
 
-            Map<String, String> data = Map.of("accessToken", tokens.accessToken());
-            return ResponseEntity.ok(ResponseMessage.success("Login successful", data));
-
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ResponseMessage.failure(e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ResponseMessage.failure("Login failed: " + e.getMessage()));
-        }
+        // ❌ frontga refreshToken bermaymiz
+        Map<String, String> data = Map.of("accessToken", tokens.accessToken());
+        return ResponseEntity.ok(ResponseMessage.success("Login successful", data));
     }
+
 
     // ----------------------------------------------------------------------
     // 🔹 REFRESH TOKEN
@@ -94,34 +89,40 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        String refreshToken = Arrays.stream(Optional.ofNullable(request.getCookies()).orElse(new Cookie[0]))
+        // 1) Cookie'dan refresh_token ni o'qish
+        String refreshToken = Arrays.stream(
+                        Optional.ofNullable(request.getCookies()).orElse(new Cookie[0]))
                 .filter(c -> "refresh_token".equals(c.getName()))
                 .map(Cookie::getValue)
                 .findFirst()
                 .orElse(null);
 
+        // 2) Token tekshiruv
         if (refreshToken == null || !jwtProvider.validateToken(refreshToken)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ResponseMessage.failure("Invalid or missing refresh token"));
         }
 
+        // 3) Foydalanuvchi ma'lumotlari va yangi access token
         String userId = jwtProvider.getUserId(refreshToken);
-        String role = jwtProvider.getUserRole(refreshToken);
+        String role   = jwtProvider.getUserRole(refreshToken);
 
         String newAccessToken = jwtProvider.generateAccessToken(userId, role);
 
-        // ✅ Update cookie (secure, consistent)
+        // 4) Cookie'ni yangilash (muddati uzaytiriladi)
         ResponseCookie cookie = ResponseCookie.from("refresh_token", refreshToken)
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("None")
+                .httpOnly(true)     // JS orqali o‘qilmaydi
+                .secure(true)       // HTTPS talab etiladi
+                .sameSite("None")   // cross-site holatlarda jo‘natish uchun
                 .path("/")
                 .maxAge(Duration.ofDays(30))
                 .build();
+
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
-        Map<String, String> tokens = Map.of("accessToken", newAccessToken);
-        return ResponseEntity.ok(ResponseMessage.success("Token refreshed successfully", tokens));
+        // 5) Javob: faqat accessToken body’da
+        Map<String, String> data = Map.of("accessToken", newAccessToken);
+        return ResponseEntity.ok(ResponseMessage.success("Token refreshed successfully", data));
     }
 
 
@@ -159,4 +160,40 @@ public class AuthController {
         response.addHeader(HttpHeaders.SET_COOKIE, expiredCookie.toString());
         return ResponseEntity.ok(ResponseMessage.success("Successfully logged out", null));
     }
+    // ✅ ME (CURRENT USER)
+    @GetMapping("/me")
+    public ResponseEntity<ResponseMessage<UserMeResponse>> me(HttpServletRequest request) {
+        String accessToken = resolveAccessToken(request);
+        if (accessToken == null || !jwtProvider.validateToken(accessToken)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ResponseMessage.failure("Missing or invalid access token"));
+        }
+
+        UUID userId = UUID.fromString(jwtProvider.getUserId(accessToken));
+        Role role = Role.valueOf(jwtProvider.getUserRole(accessToken));
+
+        UserMeResponse profile = authService.getCurrentUserProfile(userId, role);
+        return ResponseEntity.ok(ResponseMessage.success("OK", profile));
+    }
+
+    /** 🔎 Tokenni topish: Authorization → cookie(access_token) → query(accessToken) */
+    private String resolveAccessToken(HttpServletRequest request) {
+        // 1) Authorization: Bearer <token>
+        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (auth != null && auth.startsWith("Bearer ")) {
+            return auth.substring(7);
+        }
+        // 2) Cookie: access_token
+        if (request.getCookies() != null) {
+            for (Cookie c : request.getCookies()) {
+                if ("access_token".equals(c.getName())) {
+                    return c.getValue();
+                }
+            }
+        }
+        // 3) Query param (fallback): ?accessToken=...
+        String fromQuery = request.getParameter("accessToken");
+        return (fromQuery == null || fromQuery.isBlank()) ? null : fromQuery;
+    }
+
 }

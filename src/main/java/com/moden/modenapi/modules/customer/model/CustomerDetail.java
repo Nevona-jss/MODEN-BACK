@@ -28,10 +28,6 @@ public class CustomerDetail extends BaseEntity {
     @Column(name = "studio_id", columnDefinition = "uniqueidentifier")
     private  UUID studioId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Role role = Role.CUSTOMER;
-
     @Column(length = 255)
     private String email;
 

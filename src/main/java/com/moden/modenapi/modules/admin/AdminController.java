@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -32,35 +33,36 @@ public class AdminController {
     private final AdminService adminService;
 
     // ----------------------------------------------------------------------
-    // 🔹 CREATE STUDIO
-    // ----------------------------------------------------------------------
+// 🔹 CREATE STUDIO (ADMIN)
+// ----------------------------------------------------------------------
     @Operation(
-            summary = "Create a new hair studio (auto-registers ownerName)",
+            summary = "Create a new hair studio (auto-creates owner by phone)",
             description = """
-                    Creates a new hair studio associated with a user ID.
-                    Required fields: `name`, `businessNo`, `ownerName`, and `password`.
-                    You can also upload logo/banner/profile images.
-                    """
+        Required JSON fields (in `data` part): fullName, businessNo, ownerPhone, password.
+        Optional: ownerName, idForLogin, address/description/links, latitude/longitude.
+        You may also upload files: logoFile, bannerFile, profileFile.
+        """
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Studio created successfully",
                     content = @Content(schema = @Schema(implementation = StudioRes.class))),
             @ApiResponse(responseCode = "400", description = "Validation error"),
-            @ApiResponse(responseCode = "409", description = "Duplicate studio ID")
+            @ApiResponse(responseCode = "409", description = "Duplicate studio login ID (idForLogin)")
     })
-    @PostMapping("/studios/create/{userId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ResponseMessage<StudioRes>> createStudio(
-            @PathVariable UUID userId,
-            @Valid @RequestPart("data") StudioCreateReq req,       // ✅ JSON 필드
+            @Valid @RequestPart("data") StudioCreateReq req,
             @RequestPart(value = "logoFile", required = false) MultipartFile logoFile,
             @RequestPart(value = "bannerFile", required = false) MultipartFile bannerFile,
             @RequestPart(value = "profileFile", required = false) MultipartFile profileFile
     ) {
-        StudioRes result = adminService.createStudio(userId, req, logoFile, bannerFile, profileFile);
+        StudioRes result = adminService.createStudio(req, logoFile, bannerFile, profileFile);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ResponseMessage.success("Studio created successfully", result));
     }
+
 
     // ----------------------------------------------------------------------
     // 🔹 GET SINGLE STUDIO

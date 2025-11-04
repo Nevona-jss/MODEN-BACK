@@ -1,13 +1,16 @@
 package com.moden.modenapi.modules.designer.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.moden.modenapi.common.enums.DesignerStatus;
 import com.moden.modenapi.common.enums.Position;
-import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.model.BaseEntity;
+import com.moden.modenapi.common.utils.UuidListJsonConverter;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -27,20 +30,19 @@ public class DesignerDetail extends BaseEntity {
     private UUID hairStudioId;
 
     @Column(length = 50, unique = true)
-    private String idForLogin; // Designer login code (e.g., DS-XXX-12345)
+    private String idForLogin;
 
     @Column(length = 1000)
     private String bio;
 
-    @Column(length = 500)
-    private String portfolioUrl; //ko'p rasm yuklanishi mumkin
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Role role = Role.DESIGNER; // ✅ FIXED — now builder & getter exist
-
     @Enumerated(EnumType.STRING)
     private Position position = Position.DESIGNER;
 
+    @Column(name = "portfolio_item_ids", columnDefinition = "nvarchar(max)")
+    @Convert(converter = UuidListJsonConverter.class)
+    private List<UUID> portfolioItemIds = new ArrayList<>();
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 20, nullable = false)
+    private DesignerStatus status = DesignerStatus.WORKING;  // default: 근무중
 }

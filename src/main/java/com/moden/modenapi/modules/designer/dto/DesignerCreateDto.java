@@ -1,5 +1,6 @@
 package com.moden.modenapi.modules.designer.dto;
 
+import com.moden.modenapi.common.enums.DesignerStatus;
 import com.moden.modenapi.common.enums.Position;
 import com.moden.modenapi.common.enums.Role;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -33,5 +34,7 @@ public record DesignerCreateDto(
         @NotBlank @Size(min = 6, max = 100)
         String password,
 
-        Role role
+        Role role,
+
+        DesignerStatus status   // ✅ optional
 ) {}
