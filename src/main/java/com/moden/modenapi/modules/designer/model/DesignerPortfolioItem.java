@@ -14,9 +14,6 @@ import java.util.UUID;
 @Builder
 public class DesignerPortfolioItem extends BaseEntity {
 
-    // FK(designer_id) comes from @JoinColumn in DesignerDetail.portfolio
-    // No back-reference needed (unidirectional), so no @ManyToOne field required
-
     @Column(name = "designer_id", columnDefinition = "uniqueidentifier", nullable = false)
     private UUID designerId;
 

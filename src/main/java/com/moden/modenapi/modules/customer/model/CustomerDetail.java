@@ -1,6 +1,7 @@
 package com.moden.modenapi.modules.customer.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.moden.modenapi.common.enums.Gender;
 import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.model.BaseEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -31,8 +32,9 @@ public class CustomerDetail extends BaseEntity {
     @Column(length = 255)
     private String email;
 
+    @Enumerated(EnumType.STRING)
     @Column(length = 10)
-    private String gender; // MALE, FEMALE, OTHER
+    private Gender gender;
 
     private LocalDate birthdate;
 
@@ -47,4 +49,6 @@ public class CustomerDetail extends BaseEntity {
 
     @Column(name = "consent_marketing", nullable = false)
     private boolean consentMarketing = false;
+
+    private boolean notificationEnabled = false;  //카카오 알림톡 (필수)동의/미동의
 }

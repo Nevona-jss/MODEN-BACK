@@ -1,20 +1,21 @@
 package com.moden.modenapi.modules.customer.service;
 
+import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.service.BaseService;
-import com.moden.modenapi.modules.auth.repository.UserRepository;
-import com.moden.modenapi.modules.coupon.service.CouponService;
-import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
-import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.modules.auth.model.User;
+import com.moden.modenapi.modules.auth.repository.UserRepository;
+import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
-import com.moden.modenapi.modules.auth.model.UserSession;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
-import com.moden.modenapi.modules.auth.repository.UserSessionRepository;
-import com.moden.modenapi.security.JwtProvider;
-import jakarta.servlet.http.HttpServletRequest;
+import com.moden.modenapi.modules.designer.model.DesignerDetail;
+import com.moden.modenapi.modules.designer.repository.DesignerDetailRepository;
+import com.moden.modenapi.modules.studio.model.HairStudioDetail;
+import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,121 +28,146 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CustomerService extends BaseService<CustomerDetail> {
 
-    private final UserRepository userRepository;
-    private final CustomerDetailRepository customerDetailRepository;
-    private final UserSessionRepository userSessionRepository;
-    private final JwtProvider jwtProvider;
-    private final HttpServletRequest request;
-    private final CouponService couponService;
+    private final UserRepository userRepo;
+    private final CustomerDetailRepository customerRepo;
+    private final HairStudioDetailRepository studioRepo;
+    private final DesignerDetailRepository designerRepo;
 
-    // 🔹 CREATE USER + SESSION
-    @Transactional
-    public User createUser(CustomerSignUpRequest req,
-                           String deviceId,
-                           String deviceType,
-                           String ipAddress,
-                           String userAgent,
-                           String appVersion) {
+    /* -------------------- helpers -------------------- */
 
-        userRepository.findByPhone(req.phone()).ifPresent(u -> {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Phone number already registered");
-        });
-
-        User user = User.builder()
-                .fullName(req.fullName())
-                .phone(req.phone())
-                .build();
-        userRepository.save(user);
-
-        UserSession session = UserSession.builder()
-                .userId(user.getId())
-                .deviceId(deviceId)
-                .deviceType(deviceType)
-                .ipAddress(ipAddress)
-                .userAgent(userAgent)
-                .appVersion(appVersion)
-                .isPrimarySession(true)
-                .revoked(false)
-                .lastActivityAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(60L * 60 * 24 * 30))
-                .build();
-        userSessionRepository.save(session);
-
-        // Issue first-visit coupon
-        couponService.issueFirstVisitCoupon(req.studioId(), user.getId());
-        return user;
+    private UUID currentUserId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        String principal = (auth.getPrincipal() instanceof String s) ? s : auth.getName();
+        try { return UUID.fromString(principal); }
+        catch (Exception e) { throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid principal"); }
     }
 
-    @Transactional(readOnly = true)
-    public User getUser(UUID id) {
-        return userRepository.findActiveById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found or deleted"));
+    private boolean hasRole(String role) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        final String target = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+        return auth.getAuthorities().stream().map(GrantedAuthority::getAuthority).anyMatch(target::equals);
     }
 
-    @Transactional(readOnly = true)
-    public List<User> getAllUsers() {
-        return userRepository.findAllActive();
+    private HairStudioDetail requireStudioByOwner(UUID studioUserId) {
+        return studioRepo.findByUserIdAndDeletedAtIsNull(studioUserId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for current user"));
     }
 
-    @Transactional
-    public CustomerDetail updateUserDetail(UUID userId, CustomerProfileUpdateReq req) {
-        userRepository.findActiveById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found or deleted"));
+    private DesignerDetail requireDesignerByUser(UUID designerUserId) {
+        return designerRepo.findByUserIdAndDeletedAtIsNull(designerUserId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Designer not found for current user"));
+    }
 
-        CustomerDetail detail = customerDetailRepository.findByUserId(userId)
-                .orElse(CustomerDetail.builder().userId(userId).build());
-
-        if (req.email() != null) detail.setEmail(req.email());
-        if (req.birthdate() != null) detail.setBirthdate(req.birthdate());
-        if (req.gender() != null) detail.setGender(req.gender());
-        if (req.address() != null) detail.setAddress(req.address());
+    private void applyProfile(CustomerDetail detail, CustomerProfileUpdateReq req) {
+        if (req.email() != null)            detail.setEmail(req.email());
+        if (req.birthdate() != null)        detail.setBirthdate(req.birthdate());
+        if (req.gender() != null)           detail.setGender(req.gender()); // ✅ direct enum
+        if (req.address() != null)          detail.setAddress(req.address());
         if (req.consentMarketing() != null) detail.setConsentMarketing(req.consentMarketing());
-        if (req.profileImageUrl() != null) detail.setProfileImageUrl(req.profileImageUrl());
-        if (req.visitReason() != null) detail.setVisitReason(req.visitReason());
+        if (req.profileImageUrl() != null)  detail.setProfileImageUrl(req.profileImageUrl());
+        if (req.visitReason() != null)      detail.setVisitReason(req.visitReason());
+    }
 
-        return customerDetailRepository.save(detail);
+
+    /* -------------------- CUSTOMER (self) -------------------- */
+
+    @Transactional
+    public CustomerDetail updateOwnProfile(CustomerProfileUpdateReq req) {
+        UUID me = currentUserId();
+
+        User u = userRepo.findActiveById(me)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found or deleted"));
+
+        if (u.getRole() != Role.CUSTOMER && !hasRole("CUSTOMER"))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only CUSTOMER can update own profile");
+
+        CustomerDetail detail = customerRepo.findActiveByUserId(me)
+                .orElseGet(() -> CustomerDetail.builder().userId(me).build());
+
+        // keep existing studioId/designerId as-is
+        applyProfile(detail, req);
+
+        return customerRepo.save(detail);
+    }
+
+    /* -------------------- STUDIO actions -------------------- */
+
+    @Transactional(readOnly = true)
+    public List<CustomerDetail> listStudioCustomers() {
+        UUID studioUserId = currentUserId();
+        HairStudioDetail studio = requireStudioByOwner(studioUserId);
+        return customerRepo.findAllActiveByStudio(studio.getId());
     }
 
     @Transactional
-    public void deleteUser(UUID userId) {
-        User user = userRepository.findActiveById(userId)
-                .orElseThrow(() ->
-                        new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found or already deleted"));
+    public CustomerDetail updateCustomerAsStudio(UUID customerUserId, CustomerProfileUpdateReq req) {
+        UUID studioUserId = currentUserId();
+        HairStudioDetail studio = requireStudioByOwner(studioUserId);
 
-        user.setDeletedAt(Instant.now());
-        userRepository.save(user);
+        CustomerDetail target = customerRepo.findOneActiveInStudio(customerUserId, studio.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not in this studio"));
 
-        var sessions = userSessionRepository.findByUserId(userId);
-        sessions.forEach(s -> {
-            s.setRevoked(true);
-            s.setLastActivityAt(Instant.now());
-        });
-        userSessionRepository.saveAll(sessions);
+        applyProfile(target, req);
+        return customerRepo.save(target);
     }
+
+    @Transactional
+    public void deleteCustomerAsStudio(UUID customerUserId) {
+        UUID studioUserId = currentUserId();
+        HairStudioDetail studio = requireStudioByOwner(studioUserId);
+
+        CustomerDetail target = customerRepo.findOneActiveInStudio(customerUserId, studio.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not in this studio"));
+
+        userRepo.findActiveById(customerUserId).ifPresent(u -> {
+            u.setDeletedAt(Instant.now());
+            userRepo.save(u);
+        });
+        target.setDeletedAt(Instant.now());
+        customerRepo.save(target);
+    }
+
+    /* -------------------- DESIGNER actions -------------------- */
 
     @Transactional(readOnly = true)
-    public User getCurrentUser() {
-        return getAuthenticatedUser();
+    public List<CustomerDetail> listDesignerCustomers() {
+        UUID designerUserId = currentUserId();
+        DesignerDetail d = requireDesignerByUser(designerUserId);
+        return customerRepo.findAllActiveForDesigner(d.getId(), designerUserId);
     }
 
-    private User getAuthenticatedUser() {
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or invalid token");
-        }
+    @Transactional
+    public CustomerDetail updateCustomerAsDesigner(UUID customerUserId, CustomerProfileUpdateReq req) {
+        UUID designerUserId = currentUserId();
+        DesignerDetail d = requireDesignerByUser(designerUserId);
 
-        String token = authHeader.substring(7).trim();
-        if (!jwtProvider.validateToken(token)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired token");
-        }
+        CustomerDetail target = customerRepo.findOneActiveForDesigner(customerUserId, d.getId(), designerUserId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not assigned to this designer"));
 
-        UUID userId = UUID.fromString(jwtProvider.getUserId(token));
-        return userRepository.findActiveById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found or deleted"));
+        applyProfile(target, req);
+        return customerRepo.save(target);
+    }
+
+    @Transactional
+    public void deleteCustomerAsDesigner(UUID customerUserId) {
+        UUID designerUserId = currentUserId();
+        DesignerDetail d = requireDesignerByUser(designerUserId);
+
+        CustomerDetail target = customerRepo.findOneActiveForDesigner(customerUserId, d.getId(), designerUserId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not assigned to this designer"));
+
+        userRepo.findActiveById(customerUserId).ifPresent(u -> {
+            u.setDeletedAt(Instant.now());
+            userRepo.save(u);
+        });
+        target.setDeletedAt(Instant.now());
+        customerRepo.save(target);
     }
 
     @Override
     protected JpaRepository<CustomerDetail, UUID> getRepository() {
-        return customerDetailRepository;
+        return customerRepo;
     }
 }

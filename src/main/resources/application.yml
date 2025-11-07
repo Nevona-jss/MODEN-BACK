@@ -39,6 +39,7 @@ springdoc:
     enabled: true
     path: /docs
     operations-sorter: method
+    persist-authorization: true
   paths-to-match: /**
   default-produces-media-type: application/json
 
@@ -53,8 +54,8 @@ logging:
       enabled: ALWAYS
 
 file:
-  upload-dir: uploads/services
-  base-url: http://localhost:${server.port}/uploads/services
+  upload-dir: /home/hyona/IdeaProjects/MODEN/uploads
+  base-url: http://localhost:${server.port}/uploads
 
 app:
   jwt:

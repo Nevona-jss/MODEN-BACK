@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-@Tag(name = "Studio Service", description = "Hair studio reservation and service management")
+@Tag(name = "HAIR STUDIO-SERVICE")
 @RestController
 @RequestMapping("/api/studios/{studioId}/services")
 @RequiredArgsConstructor

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "Event", description = "Salon Event management APIs")
+@Tag(name = "HAIR STUDIO-EVENT")
 @RestController
 @RequestMapping("/api/studios/{studioId}/events")
 @RequiredArgsConstructor

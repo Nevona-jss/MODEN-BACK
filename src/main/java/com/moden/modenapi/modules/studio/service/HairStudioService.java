@@ -1,24 +1,27 @@
 package com.moden.modenapi.modules.studio.service;
 
 import com.moden.modenapi.common.service.BaseService;
-import com.moden.modenapi.common.service.FileStorageService;
-import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
+import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
-import com.moden.modenapi.security.JwtProvider;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
-
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.sql.Timestamp;
+import java.util.stream.Collectors;
+
 
 @Service
 @Transactional
@@ -26,105 +29,69 @@ import java.util.UUID;
 public class HairStudioService extends BaseService<HairStudioDetail> {
 
     private final HairStudioDetailRepository studioRepository;
-    private final JwtProvider jwtProvider;
-    private final HttpServletRequest request;
-    private final FileStorageService fileStorageService;
-    private final UserRepository userRepo; // ✅ owner info 조회용
+    private final UserRepository userRepo;
+    private final CustomerDetailRepository  customerRepo;
 
     @Override
     protected HairStudioDetailRepository getRepository() {
         return studioRepository;
     }
 
-    @Transactional(readOnly = true)
-    public StudioRes getCurrentStudio() {
-        UUID userId = extractUserIdFromToken();
-        HairStudioDetail studio = studioRepository.findByUserIdAndDeletedAtIsNull(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio profile not found"));
-        return mapToRes(studio);
-    }
 
-    public StudioRes updateStudio(UUID studioId,
-                                  StudioUpdateReq req,
-                                  MultipartFile logoFile,
-                                  MultipartFile bannerFile,
-                                  MultipartFile profileFile) {
+    /**
+     * Studio self-update:
+     * - businessNo/fullName: read-only (IGNORE), lekin response'da ko'rsatiladi
+     * - boshqa maydonlar: optional update
+     * - response: har doim to'liq StudioRes
+     */
+    @Transactional
+    public StudioRes updateSelf(UUID userId, StudioUpdateReq req) {
+        var page1 = org.springframework.data.domain.PageRequest.of(0, 1);
 
-        HairStudioDetail studio = studioRepository.findById(studioId)
+        HairStudioDetail s = studioRepository
+                .findActiveByUserIdOrderByUpdatedDesc(userId, page1)
+                .stream()
+                .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
 
-        if (studio.getDeletedAt() != null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio has been deleted");
+        if (s.getDeletedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio deleted");
         }
 
-        if (req.studioPhone() != null) studio.setStudioPhone(req.studioPhone());
-        if (req.address() != null)     studio.setAddress(req.address());
-        if (req.description() != null) studio.setDescription(req.description());
-        if (req.parkingInfo() != null) studio.setParkingInfo(req.parkingInfo());
-        if (req.latitude() != null)    studio.setLatitude(req.latitude());
-        if (req.longitude() != null)   studio.setLongitude(req.longitude());
+        // ⛔️ READ-ONLY on /me (these fields are NOT in StudioMeUpdateReq anyway)
+        // - businessNo
+        // - fullName (User)
+        // - ownerName
 
-        if (req.instagram() != null) studio.setInstagramUrl(req.instagram());
-        if (req.naver() != null)     studio.setNaverUrl(req.naver());
-        if (req.kakao() != null)     studio.setKakaoUrl(req.kakao());
+        // ✅ Editable (all optional)
+        if (req.studioPhone()  != null) s.setStudioPhone(req.studioPhone());
+        if (req.address()      != null) s.setAddress(req.address());
+        if (req.description()  != null) s.setDescription(req.description());
+        if (req.parkingInfo()  != null) s.setParkingInfo(req.parkingInfo());
 
-        try {
-            if (logoFile != null && !logoFile.isEmpty())    studio.setLogoImageUrl(fileStorageService.saveFile(logoFile));
-            if (bannerFile != null && !bannerFile.isEmpty())studio.setBannerImageUrl(fileStorageService.saveFile(bannerFile));
-            if (profileFile != null && !profileFile.isEmpty()) studio.setProfileImageUrl(fileStorageService.saveFile(profileFile));
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "File upload failed: " + e.getMessage());
-        }
+        if (req.logoImageUrl()    != null) s.setLogoImageUrl(req.logoImageUrl());
+        if (req.bannerImageUrl()  != null) s.setBannerImageUrl(req.bannerImageUrl());
+        if (req.profileImageUrl() != null) s.setProfileImageUrl(req.profileImageUrl());
 
-        studio.setUpdatedAt(Instant.now());
-        studioRepository.save(studio);
+        if (req.instagram() != null) s.setInstagramUrl(req.instagram());
+        if (req.naver()     != null) s.setNaverUrl(req.naver());
+        if (req.kakao()     != null) s.setKakaoUrl(req.kakao());
 
-        return mapToRes(studio);
-    }
+        if (req.latitude()  != null) s.setLatitude(req.latitude());
+        if (req.longitude() != null) s.setLongitude(req.longitude());
 
-    public void deleteStudio(UUID studioId) {
-        HairStudioDetail studio = studioRepository.findById(studioId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
+        s.setUpdatedAt(java.time.Instant.now());
+        studioRepository.saveAndFlush(s);
 
-        if (studio.getDeletedAt() != null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio already deleted");
-
-        studio.setDeletedAt(Instant.now());
-        studioRepository.save(studio);
-    }
-
-    private UUID extractUserIdFromToken() {
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or invalid Authorization header");
-        }
-
-        String token = authHeader.substring(7).trim();
-        if (!jwtProvider.validateToken(token)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired JWT token");
-        }
-
-        return UUID.fromString(jwtProvider.getUserId(token));
-    }
-
-    // ✅ StudioRes 생성 통일: User에서 fullName/phone 로드, 생성자 순서 맞춤
-    private StudioRes mapToRes(HairStudioDetail s) {
-        User owner = userRepo.findById(s.getUserId())
-                .orElse(null);
-
-        String ownerFullName = owner != null ? owner.getFullName() : null;
-        String ownerPhone    = owner != null ? owner.getPhone()    : null;
+        var owner = userRepo.findById(s.getUserId()).orElse(null);
 
         return new StudioRes(
-                // required
-                s.getId(),
-                s.getUserId(),
-                ownerFullName,
-                ownerPhone,
-                // optional (순서 고정)
+                s.getId(), s.getUserId(),
+                owner != null ? owner.getFullName() : null,  // read-only, visible in response
+                owner != null ? owner.getPhone()    : null,
                 s.getIdForLogin(),
-                s.getBusinessNo(),
-                s.getOwnerName(),
+                s.getBusinessNo(),                            // read-only, visible in response
+                s.getOwnerName(),                             // read-only, visible in response
                 s.getStudioPhone(),
                 s.getAddress(),
                 s.getDescription(),
@@ -138,5 +105,61 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
                 s.getLatitude(),
                 s.getLongitude()
         );
+    }
+
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> listMyCustomers(UUID userId) {
+        UUID studioId = studioRepository
+                .findActiveByUserIdOrderByUpdatedDesc(userId, PageRequest.of(0, 1))
+                .stream().findFirst().map(HairStudioDetail::getId)
+                .or(() -> studioRepository.findByUserIdAndDeletedAtIsNull(userId).map(HairStudioDetail::getId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
+
+        var rows = customerRepo.findCustomerRowsForStudio(studioId);
+
+        // Collect userIds for bulk lookup
+        var userIds = rows.stream()
+                .map(r -> (UUID) r[1])
+                .collect(Collectors.toSet());
+
+        var users = userRepo.findAllById(userIds).stream()
+                .collect(Collectors.toMap(u -> u.getId(), u -> u));  // Map<UUID, User>
+
+        List<Map<String, Object>> items = new ArrayList<>(rows.size());
+        for (Object[] r : rows) {
+            UUID cid      = (UUID) r[0];
+            UUID uid      = (UUID) r[1];
+            String pimg   = (String) r[2];
+            Instant cAt   = (r[3] instanceof Timestamp ts) ? ts.toInstant() : null;
+            Instant uAt   = (r[4] instanceof Timestamp ts) ? ts.toInstant() : null;
+
+            var u = users.get(uid); // may be null if not found
+            String fullName = (u != null && u.getFullName() != null && !u.getFullName().isBlank())
+                    ? u.getFullName() : null;
+            String phone = (u != null) ? u.getPhone() : null;
+
+            items.add(Map.of(
+                    "id", cid,
+                    "userId", uid,
+                    "fullName", fullName,
+                    "phone", phone,
+                    "profileImageUrl", pimg,
+                    "createdAt", cAt,
+                    "updatedAt", uAt
+            ));
+        }
+        return items;
+    }
+    public UUID getCurrentUserId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "No auth");
+
+        String idStr = (auth.getPrincipal() instanceof String s) ? s : auth.getName();
+        try {
+            return UUID.fromString(idStr);
+        } catch (Exception e) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid principal");
+        }
     }
 }

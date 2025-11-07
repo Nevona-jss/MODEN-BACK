@@ -20,63 +20,81 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
-
 @Configuration
 @RequiredArgsConstructor
-@EnableMethodSecurity
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter; // 아래 2) 클래스
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(c -> c.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .logout(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                        // Preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // Swagger 전체 허용 (springdoc 설정이 /docs 사용)
                         .requestMatchers(
-                                "/api/auth/signup",
-                                "/api/auth/signin",
-                                "/api/auth/refresh",
-                                "/api/auth/me",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
                                 "/swagger-resources/**",
-                                "/webjars/**"
+                                "/webjars/**",
+                                "/docs/**",
+                                "/error"
                         ).permitAll()
 
-                        // ★ 역할별 보호 (hasRole 사용)
+                        // 정적 파일(이미지 업로드 등) 공개
+                        .requestMatchers("/uploads/**").permitAll()
+
+                        // 인증/로그인 공개
+                        .requestMatchers(
+                                "/api/auth/signup",
+                                "/api/auth/signin",
+                                "/api/auth/id-login",   // ★ 스튜디오/디자이너 idForLogin 로그인
+                                "/api/auth/refresh"
+                        ).permitAll()
+
+                        // 스튜디오가 고객 등록하는 엔드포인트 (로그인 된 스튜디오만)
+                        .requestMatchers(HttpMethod.POST, "/api/studios/customers/register").hasRole("HAIR_STUDIO")
+
+                        // 역할별 보호
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/designers/**").hasRole("DESIGNER")
                         .requestMatchers("/api/studios/**").hasRole("HAIR_STUDIO")
                         .requestMatchers("/api/customers/**").hasRole("CUSTOMER")
 
-                        // 그 외는 인증만 필요
-                        .anyRequest().authenticated()
-                )
-                // ★ JWT 필터를 UsernamePasswordAuthenticationFilter 앞에 삽입
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                        // 그 외
+                        .anyRequest().permitAll()
+                );
 
+        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration cfg = new CorsConfiguration();
+        var source = new UrlBasedCorsConfigurationSource();
+
+        // ⚠️ 쿠키(리프레시 토큰)를 쓸 경우 allowCredentials(true) + Origin을 * 대신 구체값으로!
+        var cfg = new CorsConfiguration();
+        // 예시: 필요한 도메인만 명시
         cfg.setAllowedOriginPatterns(List.of(
-                "http://localhost:5173",
-                "http://localhost:8080",
-                "https://moden-kappa.vercel.app"
+                "https://dev.mycoffeeai.com",
+                "https://mycoffeeai.com",
+                "http://localhost:3000"
         ));
         cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
-        cfg.setAllowCredentials(true);
         cfg.setExposedHeaders(List.of(HttpHeaders.SET_COOKIE, HttpHeaders.AUTHORIZATION));
+        cfg.setAllowCredentials(true); // ← 쿠키 사용 시 true
         cfg.setMaxAge(3600L);
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+
         source.registerCorsConfiguration("/**", cfg);
         return source;
     }
@@ -90,4 +108,5 @@ public class SecurityConfig {
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
+
 }

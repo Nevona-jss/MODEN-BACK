@@ -26,7 +26,9 @@ public abstract class BaseEntity {
     @Id
     @GeneratedValue
     @UuidGenerator
-    @Column(name = "id", columnDefinition = "uniqueidentifier", updatable = false, nullable = false)    private UUID id;
+    @Column(name = "id", columnDefinition = "uniqueidentifier", updatable = false, nullable = false)
+    private UUID id;
+
     @CreatedDate @Column(nullable = false, updatable = false)
     protected Instant createdAt;
 

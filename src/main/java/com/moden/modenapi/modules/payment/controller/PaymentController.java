@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "Payment", description = "Payment management API")
+@Tag(name = "HAIR STUDIO-PAYMENT")
 @RestController
 @RequestMapping("/api/studios/payments")
 @RequiredArgsConstructor

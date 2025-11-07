@@ -1,101 +1,135 @@
 package com.moden.modenapi.security;
 
-import com.moden.modenapi.common.utils.JwtUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Custom JWT authentication filter executed once per request.
- * <p>
- * Responsibilities:
- * <ul>
- *     <li>Extract JWT token from the Authorization header or cookies.</li>
- *     <li>Validate and parse the token using {@link JwtProvider}.</li>
- *     <li>Load user details and set the authenticated context for the request.</li>
- *     <li>Skip authentication for Swagger and Auth endpoints.</li>
- * </ul>
+ * JWT Auth Filter:
+ * - Skips swagger and truly public endpoints
+ * - Extracts token from Authorization: Bearer ... or cookie(access_token)
+ * - Validates token, sets principal=userId and ROLE_* authorities
  */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
-    private final UserDetailsServiceImpl userDetailsService;
+
+    // Public endpoints (no auth needed)
+    private static final String[] PUBLIC_PATHS = {
+            "/", "/error",
+            "/swagger-ui", "/swagger-ui/", "/swagger-ui/index.html",
+            "/v3/api-docs", "/v3/api-docs/",
+            "/swagger-resources", "/webjars"
+    };
+
+    // Public auth endpoints — DO NOT include /api/auth/me here
+    private static final String[] PUBLIC_AUTH_PATHS = {
+            "/api/auth/login",
+            "/api/auth/refresh",
+            "/api/admin/login"
+    };
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
 
-        String uri = req.getRequestURI();
+        // Always allow preflight
+        if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
+            chain.doFilter(req, res);
+            return;
+        }
 
-        // 🔓 Allow unauthenticated access to Swagger & Auth endpoints
-        if (uri.startsWith("/swagger-ui")
-                || uri.startsWith("/v3/api-docs")
-                || uri.startsWith("/swagger-resources")
-                || uri.startsWith("/webjars")
-                || uri.equals("/")
-                || uri.startsWith("/api/auth")) {
+        final String uri = req.getRequestURI();
+
+        if (isPublic(uri)) {
             chain.doFilter(req, res);
             return;
         }
 
         try {
-            // Extract JWT from header or cookies
-            String token = extractToken(req);
-
-            if (token != null && jwtProvider.validateToken(token)
-                    && SecurityContextHolder.getContext().getAuthentication() == null) {
-
-                // Parse userId and role from token
-                String userId = jwtProvider.getUserId(token);
-                String role = jwtProvider.getUserRole(token);
-
-                var userDetails = userDetailsService.loadUserByUsername(userId);
-
-                // Build authentication object with user role
-                var authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        List.of(new SimpleGrantedAuthority(role))
-                );
-
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+            // If authentication already set, continue
+            if (SecurityContextHolder.getContext().getAuthentication() != null) {
+                chain.doFilter(req, res);
+                return;
             }
 
+            String token = extractToken(req);
+            if (token == null) {
+                chain.doFilter(req, res);
+                return;
+            }
+
+            if (jwtProvider.validateToken(token)) {
+                // subject = userId (UUID string)
+                String userId = jwtProvider.getUserId(token);
+
+                // role claim (single). If you later add multiple roles, make this a list.
+                String roleClaim = jwtProvider.getUserRole(token); // e.g. "CUSTOMER" or "ROLE_CUSTOMER"
+                String authority = normalizeRole(roleClaim);       // -> "ROLE_CUSTOMER" (default ROLE_USER)
+
+                List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+                authorities.add(new SimpleGrantedAuthority(authority));
+
+                // Principal = userId string (no DB lookup here)
+                UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(userId, null, authorities);
+                auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(req));
+
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            }
         } catch (Exception e) {
-            logger.warn("⚠️ JWT validation failed: " + e.getMessage());
+            logger.warn("JWT filter warning: " + e.getMessage());
+            // keep going to let the entrypoint/handlers respond properly
         }
 
         chain.doFilter(req, res);
     }
 
-    /**
-     * Extracts token from Authorization header or cookies.
-     *
-     * @param req current HTTP request
-     * @return JWT token string or null if not found
-     */
-    private String extractToken(HttpServletRequest req) {
-        // 1️⃣ From Authorization header
-        String headerToken = JwtUtils.extractToken(req);
-        if (headerToken != null) return headerToken;
+    private boolean isPublic(String uri) {
+        // Swagger & static
+        for (String p : PUBLIC_PATHS) {
+            if (uri.equals(p) || uri.startsWith(p + "/")) return true;
+        }
+        // Specific public auth endpoints
+        for (String p : PUBLIC_AUTH_PATHS) {
+            if (uri.equals(p)) return true;
+        }
+        return false;
+    }
 
-        // 2️⃣ From cookies (e.g., when used with web clients)
-        if (req.getCookies() != null) {
-            for (var cookie : req.getCookies()) {
-                if ("access_token".equals(cookie.getName())) {
-                    return cookie.getValue();
+    private static String normalizeRole(String roleClaim) {
+        if (roleClaim == null || roleClaim.isBlank()) return "ROLE_USER";
+        String r = roleClaim.trim().toUpperCase();
+        return r.startsWith("ROLE_") ? r : "ROLE_" + r;
+    }
+
+    /** Authorization: Bearer ... or cookie(access_token) */
+    private String extractToken(HttpServletRequest req) {
+        String header = req.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7);
+        }
+        Cookie[] cookies = req.getCookies();
+        if (cookies != null) {
+            for (Cookie c : cookies) {
+                if ("access_token".equals(c.getName())) {
+                    return c.getValue();
                 }
             }
         }

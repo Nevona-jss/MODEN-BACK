@@ -10,12 +10,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface UserSessionRepository extends BaseRepository<UserSession, UUID> {
-    @Query("SELECT s FROM UserSession s WHERE s.userId = :userId")
-    List<UserSession> findByUserId(@Param("userId") UUID userId);
 
+    List<UserSession> findByUserId(UUID userId);
+
+    Optional<UserSession> findByUserIdAndSessionId(UUID userId, String sessionId);
+
+    Optional<UserSession> findBySessionId(String sessionId);
+
+    Optional<UserSession> findByAccessTokenHash(String accessTokenHash);
 
     @Query("SELECT s FROM UserSession s WHERE s.userId = :userId AND s.revoked = false")
-    List<UserSession> findActiveByUserId(UUID userId);
-
-    Optional<UserSession> findByUserIdAndDeviceId(UUID userId, String deviceId);
+    List<UserSession> findActiveByUserId(@Param("userId") UUID userId);
 }

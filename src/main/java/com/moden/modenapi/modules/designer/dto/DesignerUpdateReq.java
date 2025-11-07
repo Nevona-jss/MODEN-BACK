@@ -4,7 +4,6 @@ public record DesignerUpdateReq(
         String bio,
         String portfolioUrl,
         String phone,
-        String idForLogin,
         String position,
         String status
 ) {}

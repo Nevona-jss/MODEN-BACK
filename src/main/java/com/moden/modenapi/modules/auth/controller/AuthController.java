@@ -1,35 +1,38 @@
 package com.moden.modenapi.modules.auth.controller;
 
-import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.utils.CookieUtil;
-import com.moden.modenapi.modules.auth.dto.UserMeResponse;
+import com.moden.modenapi.modules.admin.AdminService;
+import com.moden.modenapi.modules.auth.dto.*;
+import com.moden.modenapi.modules.auth.service.AuthMeService;
 import com.moden.modenapi.modules.auth.service.AuthService;
-import com.moden.modenapi.modules.auth.service.UserSessionService;
+import com.moden.modenapi.modules.auth.service.IdLoginService;
 import com.moden.modenapi.modules.customer.dto.CustomerSignInRequest;
-import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.security.JwtProvider;
+
+import io.swagger.v3.oas.annotations.Operation;
+
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
 import java.util.*;
 
-/**
- * ✅ AuthController
- * Handles:
- *  - Customer Sign Up
- *  - Sign In
- *  - Refresh Token
- *  - Logout
- */
+@Tag(name = "AUTHENTICATION")
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -37,59 +40,62 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtProvider jwtProvider;
-    private final UserSessionService userSessionService;
+    private final IdLoginService idLoginService;
+    private final AuthMeService authMeService;
 
-    // ----------------------------------------------------------------------
-    // 🔹 SIGN UP (CUSTOMER)
-    // ----------------------------------------------------------------------
-    @PostMapping("/signup")
-    public ResponseEntity<ResponseMessage<Void>> signUp(@RequestBody CustomerSignUpRequest req) {
-        // Force CUSTOMER role for all signups
-        CustomerSignUpRequest fixedReq =
-                new CustomerSignUpRequest(req.fullName(), req.phone(), req.studioId(), Role.CUSTOMER);
 
-        authService.signUp(fixedReq, "default123!");
+    /** ✅ 하나의 엔드포인트: ADMIN이면 기본 프로필, 그 외엔 detail object만 반환 */
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ResponseMessage<?>> me() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        String principal = (auth.getPrincipal() instanceof String s) ? s : auth.getName();
+        UUID userId = UUID.fromString(principal);
 
-        return ResponseEntity.ok(
-                ResponseMessage.<Void>builder()
-                        .success(true)
-                        .message("Customer successfully registered.")
-                        .build()
-        );
+        List<String> roles = auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).toList();
+
+        Object payload = authMeService.getMePayload(userId, roles);
+        return ResponseEntity.ok(ResponseMessage.success("OK", payload));
     }
 
+    @Operation(summary = "Studio/Designer login by idForLogin + password (refresh in cookie)")
+    @PostMapping("/login-id")
+    public ResponseEntity<ResponseMessage<Map<String, Object>>> signInById(
+            @Valid @RequestBody LoginReqStudioAndDesigner req,
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        LoginResStudioAndDesigner out = idLoginService.login(req);
+        CookieUtil.setRefreshTokenCookie(response, request, out.refreshToken());
 
+        Map<String, Object> body = Map.of(
+                "accessToken", out.accessToken(),
+                "role",        out.role(),
+                "userId",      out.userId().toString(),
+                "entityId",    out.entityId().toString(),
+                "idForLogin",  out.idForLogin()
+        );
+        return ResponseEntity.ok(ResponseMessage.success("Login successful", body));
+    }
 
-    // ----------------------------------------------------------------------
-    // 🔹 SIGN IN (NAME + PHONE)
-    // ----------------------------------------------------------------------
-
-    @PostMapping("/signin")
+    @PostMapping("/login")
     public ResponseEntity<ResponseMessage<Map<String, String>>> signIn(
             @RequestBody CustomerSignInRequest req,
             HttpServletRequest request,
             HttpServletResponse response
     ) {
         var tokens = authService.signInByNameAndPhone(req);
-
-        // ✅ 1) Refresh token faqat cookie’da
         CookieUtil.setRefreshTokenCookie(response, request, tokens.refreshToken());
-
-        // ❌ frontga refreshToken bermaymiz
         Map<String, String> data = Map.of("accessToken", tokens.accessToken());
         return ResponseEntity.ok(ResponseMessage.success("Login successful", data));
     }
 
-
-    // ----------------------------------------------------------------------
-    // 🔹 REFRESH TOKEN
-    // ----------------------------------------------------------------------
     @GetMapping("/refresh")
     public ResponseEntity<ResponseMessage<Map<String, String>>> refresh(
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        // 1) Cookie'dan refresh_token ni o'qish
         String refreshToken = Arrays.stream(
                         Optional.ofNullable(request.getCookies()).orElse(new Cookie[0]))
                 .filter(c -> "refresh_token".equals(c.getName()))
@@ -97,103 +103,35 @@ public class AuthController {
                 .findFirst()
                 .orElse(null);
 
-        // 2) Token tekshiruv
         if (refreshToken == null || !jwtProvider.validateToken(refreshToken)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ResponseMessage.failure("Invalid or missing refresh token"));
         }
 
-        // 3) Foydalanuvchi ma'lumotlari va yangi access token
         String userId = jwtProvider.getUserId(refreshToken);
         String role   = jwtProvider.getUserRole(refreshToken);
-
         String newAccessToken = jwtProvider.generateAccessToken(userId, role);
 
-        // 4) Cookie'ni yangilash (muddati uzaytiriladi)
         ResponseCookie cookie = ResponseCookie.from("refresh_token", refreshToken)
-                .httpOnly(true)     // JS orqali o‘qilmaydi
-                .secure(true)       // HTTPS talab etiladi
-                .sameSite("None")   // cross-site holatlarda jo‘natish uchun
-                .path("/")
-                .maxAge(Duration.ofDays(30))
-                .build();
-
+                .httpOnly(true).secure(true).sameSite("None")
+                .path("/").maxAge(Duration.ofDays(30)).build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
-        // 5) Javob: faqat accessToken body’da
         Map<String, String> data = Map.of("accessToken", newAccessToken);
         return ResponseEntity.ok(ResponseMessage.success("Token refreshed successfully", data));
     }
 
-
     // ----------------------------------------------------------------------
-    // 🔹 LOGOUT
+    // Logout → delegate to service (supports ?all=true)
     // ----------------------------------------------------------------------
+    @Operation(summary = "Logout (any role)", description = "Revoke current session, or all sessions with ?all=true")
     @PostMapping("/logout")
     public ResponseEntity<ResponseMessage<Void>> logout(
             HttpServletRequest request,
-            HttpServletResponse response
+            HttpServletResponse response,
+            @RequestParam(name = "all", defaultValue = "false") boolean revokeAll
     ) {
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ResponseMessage.failure("Missing or invalid token"));
-        }
-
-        String token = authHeader.substring(7);
-        if (!jwtProvider.validateToken(token)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ResponseMessage.failure("Invalid or expired token"));
-        }
-
-        UUID userId = UUID.fromString(jwtProvider.getUserId(token));
-        userSessionService.revokeAllSessions(userId);
-
-        // 🧹 Remove cookie on client side
-        ResponseCookie expiredCookie = ResponseCookie.from("refresh_token", "")
-                .httpOnly(true)
-                .secure(true)          // ← keep secure=true for consistency with CookieUtil
-                .sameSite("None")
-                .path("/")
-                .maxAge(0)
-                .build();
-        response.addHeader(HttpHeaders.SET_COOKIE, expiredCookie.toString());
+        authService.logout(request, response, revokeAll);
         return ResponseEntity.ok(ResponseMessage.success("Successfully logged out", null));
     }
-    // ✅ ME (CURRENT USER)
-    @GetMapping("/me")
-    public ResponseEntity<ResponseMessage<UserMeResponse>> me(HttpServletRequest request) {
-        String accessToken = resolveAccessToken(request);
-        if (accessToken == null || !jwtProvider.validateToken(accessToken)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ResponseMessage.failure("Missing or invalid access token"));
-        }
-
-        UUID userId = UUID.fromString(jwtProvider.getUserId(accessToken));
-        Role role = Role.valueOf(jwtProvider.getUserRole(accessToken));
-
-        UserMeResponse profile = authService.getCurrentUserProfile(userId, role);
-        return ResponseEntity.ok(ResponseMessage.success("OK", profile));
-    }
-
-    /** 🔎 Tokenni topish: Authorization → cookie(access_token) → query(accessToken) */
-    private String resolveAccessToken(HttpServletRequest request) {
-        // 1) Authorization: Bearer <token>
-        String auth = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (auth != null && auth.startsWith("Bearer ")) {
-            return auth.substring(7);
-        }
-        // 2) Cookie: access_token
-        if (request.getCookies() != null) {
-            for (Cookie c : request.getCookies()) {
-                if ("access_token".equals(c.getName())) {
-                    return c.getValue();
-                }
-            }
-        }
-        // 3) Query param (fallback): ?accessToken=...
-        String fromQuery = request.getParameter("accessToken");
-        return (fromQuery == null || fromQuery.isBlank()) ? null : fromQuery;
-    }
-
 }

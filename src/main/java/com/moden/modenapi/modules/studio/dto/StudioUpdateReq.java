@@ -2,14 +2,24 @@
 package com.moden.modenapi.modules.studio.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
-import jakarta.validation.constraints.DecimalMax;
-import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 
 @Schema(name = "StudioUpdateReq", description = "Partial update for Hair Studio (all fields optional).")
 public record StudioUpdateReq(
+
+        // ⚠️ Studio/self update: IGNORE (read-only for studio)
+        @Schema(description = "Owner full name (User.fullName) — read-only for studio")
+        @Size(max = 100)
+        String fullName,
+
+        // ⚠️ Studio/self update: IGNORE (read-only for studio)
+        @Schema(description = "Business registration number — read-only for studio")
+        @Size(max = 50)
+        String businessNo,
+
+        String ownerName,
+
         @Schema(description = "Studio phone number", example = "02-123-4567")
         @Size(max = 50)
         String studioPhone,
@@ -18,14 +28,10 @@ public record StudioUpdateReq(
         @Size(max = 255)
         String address,
 
-        @Schema(description = "Owner phone number (not persisted yet)", example = "010-9999-8888")
-        @Size(max = 50)
-        String ownerPhone,
-
         @Schema(description = "Studio description / introduction")
         String description,
 
-        // images
+        // images (URL)
         @Schema(description = "Main logo image URL")
         @Size(max = 500)
         String logoImageUrl,
@@ -35,7 +41,7 @@ public record StudioUpdateReq(
         String bannerImageUrl,
 
         @Schema(description = "Profile image URL (small avatar)")
-        @Size(max = 255)
+        @Size(max = 500)
         String profileImageUrl,
 
         // socials

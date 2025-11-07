@@ -1,15 +1,19 @@
 package com.moden.modenapi.security;
 
 import io.jsonwebtoken.*;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.Date;
+import java.util.*;
 
 /**
- * Utility class for generating and validating JWT tokens.
- * <p>
- * Supports both Access and Refresh tokens, each with configurable expiration.
+ * JWT provider:
+ * - Generates access/refresh tokens
+ * - Validates tokens
+ * - Reads subject (userId) and role(s)
+ * - Exposes generic claim getters
  */
 @Component
 @RequiredArgsConstructor
@@ -17,29 +21,32 @@ public class JwtProvider {
 
     private final JwtProperties jwtProperties;
 
-    /**
-     * Generates a signed JWT access token.
-     *
-     * @param userId unique user identifier
-     * @param role   user's role (CUSTOMER, DESIGNER, HAIR_STUDIO, ADMIN)
-     * @return signed JWT string
-     */
+    // =========================
+    // Generate Tokens
+    // =========================
+
+    /** Single-role variant (backward compatible) */
     public String generateAccessToken(String userId, String role) {
         return Jwts.builder()
                 .setSubject(userId)
-                .claim("role", role)
+                .claim("role", role) // keep legacy "role"
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + jwtProperties.getAccessExpirationMs()))
                 .signWith(SignatureAlgorithm.HS256, jwtProperties.getSecret())
                 .compact();
     }
 
-    /**
-     * Generates a signed JWT refresh token.
-     *
-     * @param userId unique user identifier
-     * @return signed JWT string
-     */
+    /** Multi-role variant (preferred if you have multiple roles) */
+    public String generateAccessToken(String userId, List<String> roles) {
+        return Jwts.builder()
+                .setSubject(userId)
+                .claim("roles", roles) // canonical "roles"
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + jwtProperties.getAccessExpirationMs()))
+                .signWith(SignatureAlgorithm.HS256, jwtProperties.getSecret())
+                .compact();
+    }
+
     public String generateRefreshToken(String userId) {
         return Jwts.builder()
                 .setSubject(userId)
@@ -49,36 +56,50 @@ public class JwtProvider {
                 .compact();
     }
 
-    /**
-     * Parses the token and returns the user ID (subject).
-     *
-     * @param token JWT string
-     * @return userId (subject)
-     */
+    // =========================
+    // Read Claims
+    // =========================
+
+    /** Subject == userId */
     public String getUserId(String token) {
-        Claims claims = parseClaims(token);
-        return claims.getSubject();
+        return parseClaims(token).getSubject();
     }
 
-    /**
-     * Extracts the user role from the token claims.
-     *
-     * @param token JWT string
-     * @return role fullName (e.g. ADMIN, DESIGNER, CUSTOMER)
-     */
+    /** Legacy: single role (may be null). Prefer getRoles(). */
     public String getUserRole(String token) {
-        Claims claims = parseClaims(token);
-        return claims.get("role", String.class);
+        return parseClaims(token).get("role", String.class);
     }
 
-    /**
-     * Validates the provided JWT token.
-     * <p>
-     * Checks signature validity, expiration date, and token structure.
-     *
-     * @param token JWT string
-     * @return true if token is valid, false otherwise
-     */
+    /** Roles from "roles" or "role" (string/array/comma-separated) */
+    public List<String> getRoles(String token) {
+        Object raw = getClaim(token, "roles");
+        if (raw == null) raw = getClaim(token, "role");
+
+        List<String> out = new ArrayList<>();
+        if (raw instanceof String s) {
+            for (String p : s.split("[,\\s]+")) {
+                if (!p.isBlank()) out.add(p.trim());
+            }
+        } else if (raw instanceof Collection<?> c) {
+            for (Object o : c) {
+                if (o != null) {
+                    String v = o.toString().trim();
+                    if (!v.isBlank()) out.add(v);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Generic claim getter (Object) */
+    public Object getClaim(String token, String name) {
+        return parseClaims(token).get(name);
+    }
+
+    // =========================
+    // Validation
+    // =========================
+
     public boolean validateToken(String token) {
         try {
             Jwts.parser()
@@ -99,16 +120,45 @@ public class JwtProvider {
         return false;
     }
 
-    /**
-     * Internal helper to parse and return claims.
-     *
-     * @param token JWT string
-     * @return parsed Claims object
-     */
-    private Claims parseClaims(String token) {
+    // =========================
+    // Helpers
+    // =========================
+
+    /** Made public so filters/controllers can reuse it */
+    public Claims parseClaims(String token) {
         return Jwts.parser()
                 .setSigningKey(jwtProperties.getSecret())
                 .parseClaimsJws(token)
                 .getBody();
+    }
+
+
+    /** Extract access token from Authorization: Bearer ... or access_token cookie */
+    public String resolveToken(HttpServletRequest request) {
+        String h = request.getHeader("Authorization");
+        if (h != null && h.startsWith("Bearer ")) {
+            return h.substring(7);
+        }
+        Cookie[] cookies = Optional.ofNullable(request.getCookies()).orElse(new Cookie[0]);
+        for (Cookie c : cookies) {
+            if ("access_token".equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) {
+                return c.getValue();
+            }
+        }
+        return null;
+    }
+
+    /** Convenience: parse userId from request */
+    public UUID getUserIdFrom(HttpServletRequest request) {
+        String token = resolveToken(request);
+        if (token == null || !validateToken(token)) return null;
+        return UUID.fromString(getUserId(token));
+    }
+
+    /** Convenience: parse role string from request (legacy single role) */
+    public String getRoleFrom(HttpServletRequest request) {
+        String token = resolveToken(request);
+        if (token == null || !validateToken(token)) return null;
+        return getUserRole(token);
     }
 }

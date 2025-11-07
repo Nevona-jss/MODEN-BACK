@@ -1,15 +1,16 @@
 package com.moden.modenapi.modules.admin;
 
 import com.moden.modenapi.common.response.ResponseMessage;
+import com.moden.modenapi.modules.auth.dto.AdminSimpleSignInReq;
+import com.moden.modenapi.modules.auth.dto.AuthResponse;
+import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.modules.studio.dto.StudioCreateReq;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
+import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
+import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.annotation.security.PermitAll;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,82 +19,80 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
 import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "Admin", description = "System administration APIs (ADMIN role only)")
 @RestController
-@RequestMapping("/api/admin")
+@RequestMapping("/api")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('ADMIN')") // ✅ 권한 접두어 ROLE_ 필수
-@SecurityRequirement(name = "bearerAuth")
 public class AdminController {
 
     private final AdminService adminService;
+    private final HairStudioDetailRepository  hairStudioDetailRepository;
+    private final UserRepository userRepository;
 
-    // -------------------------Create---------------------------------------------
-    @Operation(
-            summary = "Create a new hair studio (auto-creates owner by phone)",
-            description = """
-        Required JSON fields (in `data` part): fullName, businessNo, ownerPhone, password.
-        Optional: ownerName, idForLogin, address/description/links, latitude/longitude.
-        You may also upload files: logoFile, bannerFile, profileFile.
-        """
+
+
+
+    // ------------------------- Create ---------------------------------------------
+    @PostMapping(
+            value = "/admin/studios/register",
+            consumes = {
+                    MediaType.MULTIPART_FORM_DATA_VALUE,
+                    MediaType.APPLICATION_JSON_VALUE,
+                    MediaType.APPLICATION_OCTET_STREAM_VALUE, // ← allow octet-stream too
+                    MediaType.ALL_VALUE                       // ← catch-all
+            },
+            produces = MediaType.APPLICATION_JSON_VALUE
     )
-    @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Studio created successfully",
-                    content = @Content(schema = @Schema(implementation = StudioRes.class))),
-            @ApiResponse(responseCode = "400", description = "Validation error"),
-            @ApiResponse(responseCode = "409", description = "Duplicate studio login ID (idForLogin)")
-    })
     @PreAuthorize("hasRole('ADMIN')")
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ResponseMessage<StudioRes>> createStudio(
             @Valid @RequestPart("data") StudioCreateReq req,
-            @RequestPart(value = "logoFile", required = false) MultipartFile logoFile,
-            @RequestPart(value = "bannerFile", required = false) MultipartFile bannerFile,
+            @RequestPart(value = "logoFile",    required = false) MultipartFile logoFile,
+            @RequestPart(value = "bannerFile",  required = false) MultipartFile bannerFile,
             @RequestPart(value = "profileFile", required = false) MultipartFile profileFile
     ) {
         StudioRes result = adminService.createStudio(req, logoFile, bannerFile, profileFile);
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
+        return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ResponseMessage.success("Studio created successfully", result));
     }
 
 
-    // ----------------------------------------------------------------------
-    // 🔹 GET SINGLE STUDIO
-    // ----------------------------------------------------------------------
+    // ------------------------- Read one -------------------------------------------
     @Operation(summary = "Get a studio by ID", description = "Retrieve details of a single active studio (ADMIN only).")
-    @GetMapping("/studios/read/{studioId}") // ✅ {studioId} 괄호 누락 수정
+    @GetMapping("/admin/studios/get{studioId}")
     public ResponseEntity<ResponseMessage<StudioRes>> getStudio(@PathVariable UUID studioId) {
         StudioRes studio = adminService.getStudio(studioId);
         return ResponseEntity.ok(ResponseMessage.success("Studio retrieved successfully", studio));
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 GET ALL STUDIOS
-    // ----------------------------------------------------------------------
+    // ------------------------- List all -------------------------------------------
     @Operation(summary = "List all active studios", description = "Retrieve all active (non-deleted) studios (ADMIN only).")
-    @GetMapping("/studios/list")
+    @GetMapping("/admin/studios/list")
     public ResponseEntity<ResponseMessage<List<StudioRes>>> getAllStudios() {
         List<StudioRes> studios = adminService.getAllStudios();
         return ResponseEntity.ok(ResponseMessage.success("Studio list retrieved successfully", studios));
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 DELETE STUDIO (SOFT DELETE)
-    // ----------------------------------------------------------------------
+    @Operation(summary = "Admin: Update a studio by ID (JSON, partial)")
+    @PatchMapping(path = "/admin/studios/update/{studioId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ResponseMessage<StudioRes>> adminUpdateStudio(
+            @PathVariable UUID studioId,
+            @RequestBody StudioUpdateReq req
+    ) {
+        StudioRes res = adminService.adminUpdateStudio(studioId, req);
+        return ResponseEntity.ok(ResponseMessage.success("Studio updated", res));
+    }
+
+
+
+    // ------------------------- Soft Delete ----------------------------------------
     @Operation(summary = "Soft delete a studio", description = "Marks a studio as deleted without removing it from the database (ADMIN only).")
-    @DeleteMapping("/studios/delete/{studioId}") // ✅ 괄호 누락 수정
+    @DeleteMapping("/admin/studios/delete/{studioId}")
     public ResponseEntity<ResponseMessage<?>> deleteStudio(@PathVariable UUID studioId) {
         adminService.deleteStudio(studioId);
         return ResponseEntity.ok(ResponseMessage.success("Studio deleted successfully"));
     }
-
-    // ----------------------------------------------------------------------
-    // 🔹 USERS (Future Extension)
-    // ----------------------------------------------------------------------
-    // 필요 시 getAllUsers(), getAllReservations() 추가
 }

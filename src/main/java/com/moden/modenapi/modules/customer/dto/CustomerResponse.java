@@ -1,5 +1,6 @@
 package com.moden.modenapi.modules.customer.dto;
 
+import com.moden.modenapi.common.enums.Gender;
 import com.moden.modenapi.common.enums.Role;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -10,7 +11,7 @@ public record CustomerResponse(
         String phone,
         Role role,
         String email,
-        String gender,
+        Gender gender,
         LocalDate birthdate,
         String address,
         String profileImageUrl,

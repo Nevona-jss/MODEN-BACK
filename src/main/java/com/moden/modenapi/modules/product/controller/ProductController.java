@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "Studio Product", description = "Manage products owned by each salon (e.g., shampoo, color, etc.)")
+@Tag(name = "HAIR STUDIO-PRODUCTS")
 @RestController
 @RequestMapping("/api/studios/{studioId}/products")
 @RequiredArgsConstructor

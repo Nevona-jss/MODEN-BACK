@@ -1,172 +1,147 @@
 package com.moden.modenapi.modules.studio.controller;
 
 import com.moden.modenapi.common.response.ResponseMessage;
-import com.moden.modenapi.modules.admin.AdminService;
-import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
-import com.moden.modenapi.modules.studio.dto.StudioCreateReq;
+import com.moden.modenapi.modules.auth.service.AuthService;
+import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
+import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
+import com.moden.modenapi.modules.customer.model.CustomerDetail;
+import com.moden.modenapi.modules.customer.service.CustomerService;
+import com.moden.modenapi.modules.designer.dto.DesignerCreateDto;
+import com.moden.modenapi.modules.designer.dto.DesignerResponse;
+import com.moden.modenapi.modules.designer.service.DesignerService;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
-import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
+import com.moden.modenapi.modules.studio.service.HairStudioService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "Admin Studio", description = "ADMIN creates/manages studios")
+@Tag(name = "HAIR STUDIO")
 @RestController
-@RequestMapping("/api/admin/studios")
+@RequestMapping("/api/studios")
 @RequiredArgsConstructor
 public class StudioAdminController {
 
-    private final AdminService adminService;
-    private final HairStudioDetailRepository studioRepo;
-    private final UserRepository userRepo;
+    private final HairStudioService  studioService;
+    private final DesignerService designerService;
+    private final CustomerService service;
+    private final AuthService authService;
 
-    @Operation(
-            summary = "Create a new hair studio (minimal)",
-            description = """
-        Required JSON fields (inside `data`): fullName, businessNo, ownerPhone, password.
-        Files are optional (logoFile, bannerFile, profileFile) — you may also upload later via update.
-        """
-    )
-    @PreAuthorize("hasRole('ADMIN')")
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ResponseMessage<StudioRes>> createStudio(
-            @Valid @RequestPart("data") StudioCreateReq data,
-            @RequestPart(value = "logoFile", required = false) MultipartFile logoFile,
-            @RequestPart(value = "bannerFile", required = false) MultipartFile bannerFile,
-            @RequestPart(value = "profileFile", required = false) MultipartFile profileFile
-    ) {
-        var res = adminService.createStudio(data, logoFile, bannerFile, profileFile);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ResponseMessage.success("Studio created successfully", res));
+
+
+    // ----------------------------------------------------------------------
+    // 🔹 SIGN UP (CUSTOMER)
+    // ----------------------------------------------------------------------
+    @PostMapping("/customer/register")
+    public ResponseEntity<ResponseMessage<Void>> signUp(@RequestBody CustomerSignUpRequest req) {
+        // Force CUSTOMER role for all signups
+        CustomerSignUpRequest fixedReq =
+                new CustomerSignUpRequest(req.fullName(), req.phone() );
+
+        authService.signUp(fixedReq, "default123!");
+
+        return ResponseEntity.ok(
+                ResponseMessage.<Void>builder()
+                        .success(true)
+                        .message("Customer successfully registered.")
+                        .build()
+        );
     }
 
-
-    // ------------------------------------------------------------------
-    // UPDATE (files optional)
-    // ------------------------------------------------------------------
-    @Operation(summary = "Update studio (ADMIN)")
-    @PatchMapping(path = "/{studioId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ResponseMessage<StudioRes>> updateStudio(
-            @PathVariable UUID studioId,
-            @RequestPart("data") StudioUpdateReq req,
-            @RequestPart(value = "logoFile", required = false)    MultipartFile logoFile,
-            @RequestPart(value = "bannerFile", required = false)  MultipartFile bannerFile,
-            @RequestPart(value = "profileFile", required = false) MultipartFile profileFile
-    ) {
-        HairStudioDetail s = studioRepo.findById(studioId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
-        if (s.getDeletedAt() != null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio deleted");
-
-        if (req.studioPhone() != null) s.setStudioPhone(req.studioPhone());
-        if (req.address() != null)     s.setAddress(req.address());
-        if (req.description() != null) s.setDescription(req.description());
-        if (req.parkingInfo() != null) s.setParkingInfo(req.parkingInfo());
-        if (req.instagram() != null)   s.setInstagramUrl(req.instagram());
-        if (req.naver() != null)       s.setNaverUrl(req.naver());
-        if (req.kakao() != null)       s.setKakaoUrl(req.kakao());
-        if (req.latitude() != null)    s.setLatitude(req.latitude());
-        if (req.longitude() != null)   s.setLongitude(req.longitude());
-
-        // (파일 업로드 처리 시 서비스로 위임 가능)
-
-        s.setUpdatedAt(Instant.now());
-        studioRepo.save(s);
-
-        var owner = userRepo.findById(s.getUserId()).orElse(null);
-        String ownerFullName = owner != null ? owner.getFullName() : null;
-        String ownerPhone    = owner != null ? owner.getPhone()    : null;
-
-        var res = new StudioRes(
-                // required
-                s.getId(),
-                s.getUserId(),
-                ownerFullName,
-                ownerPhone,
-                // optional (order must match StudioRes)
-                s.getIdForLogin(),
-                s.getBusinessNo(),
-                s.getOwnerName(),
-                s.getStudioPhone(),
-                s.getAddress(),
-                s.getDescription(),
-                s.getProfileImageUrl(),
-                s.getLogoImageUrl(),
-                s.getBannerImageUrl(),
-                s.getInstagramUrl(),
-                s.getNaverUrl(),
-                s.getKakaoUrl(),
-                s.getParkingInfo(),
-                s.getLatitude(),
-                s.getLongitude()
-        );
+    @Operation(summary = "Studio: Update my profile (partial)")
+    @PatchMapping(path = "/profile", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    public ResponseEntity<ResponseMessage<StudioRes>> updateMyProfile(@RequestBody StudioUpdateReq req) {
+        UUID userId = studioService.getCurrentUserId();
+        StudioRes res = studioService.updateSelf(userId, req); // ⬅️ 일부만 수정 + 전체 응답
         return ResponseEntity.ok(ResponseMessage.success("Studio updated", res));
     }
 
-    @Operation(summary = "Get studio by ID (ADMIN)")
-    @GetMapping("/{studioId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ResponseMessage<StudioRes>> getStudio(@PathVariable UUID studioId) {
-        HairStudioDetail s = studioRepo.findById(studioId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
-
-        var owner = userRepo.findById(s.getUserId()).orElse(null);
-        String ownerFullName = owner != null ? owner.getFullName() : null;
-        String ownerPhone    = owner != null ? owner.getPhone()    : null;
-
-        var res = new StudioRes(
-                // required
-                s.getId(),
-                s.getUserId(),
-                ownerFullName,
-                ownerPhone,
-                // optional
-                s.getIdForLogin(),
-                s.getBusinessNo(),
-                s.getOwnerName(),
-                s.getStudioPhone(),
-                s.getAddress(),
-                s.getDescription(),
-                s.getProfileImageUrl(),
-                s.getLogoImageUrl(),
-                s.getBannerImageUrl(),
-                s.getInstagramUrl(),
-                s.getNaverUrl(),
-                s.getKakaoUrl(),
-                s.getParkingInfo(),
-                s.getLatitude(),
-                s.getLongitude()
-        );
-        return ResponseEntity.ok(ResponseMessage.success(res));
+    // ----------------------------------------------------------------------
+    // 🔹 STUDIO/ADMIN: Create designer
+    // ----------------------------------------------------------------------
+    @Operation(
+            summary = "Create designer (Studio only)",
+            description = """
+                Creates a designer for the current studio (taken from token).
+                Server always generates `idForLogin` (DS-XXXXX-12345) and forces `role=DESIGNER`.
+                """
+    )
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PostMapping("/designer/register")
+    public ResponseEntity<ResponseMessage<DesignerResponse>> createDesigner(
+            HttpServletRequest request,
+            @Valid @RequestBody DesignerCreateDto req
+    ) {
+        var created = designerService.createDesigner(request, req);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ResponseMessage.success("Designer created successfully", created));
     }
 
-    @Operation(summary = "Soft delete studio (ADMIN)")
-    @DeleteMapping("/{studioId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deleteStudio(@PathVariable UUID studioId) {
-        HairStudioDetail s = studioRepo.findById(studioId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
-        if (s.getDeletedAt() != null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio already deleted");
-        s.setDeletedAt(Instant.now());
-        studioRepo.save(s);
-        return ResponseEntity.noContent().build();
+    @Operation(
+            summary = "Get designer by ID",
+            description = "Returns a single designer profile (requires admin/studio permission)."
+    )
+    @GetMapping("/designer/{designerId}")
+    public ResponseEntity<ResponseMessage<DesignerResponse>> getDesigner(
+            @PathVariable UUID designerId
+    ) {
+        var data = designerService.getProfile(designerId);
+        return ResponseEntity.ok(ResponseMessage.success("Designer fetched successfully", data));
     }
+
+
+
+    @Operation(summary = "Delete designer (soft delete)",
+            description = "Studio can delete its own designer. Marks deleted_at; portfolio untouched.")
+    @PreAuthorize("hasRole('HAIR_STUDIO') or hasRole('ADMIN')")
+    @DeleteMapping("/designer/delete/{id}")
+    public ResponseEntity<ResponseMessage<Void>> deleteDesigner(
+            HttpServletRequest request,
+            @PathVariable("id") UUID designerId
+    ) {
+        designerService.deleteDesigner(request, designerId);
+        return ResponseEntity.ok(ResponseMessage.success("Designer soft-deleted", null));
+    }
+
+    //need to fix
+    @Operation(summary = "Studio: list my customers")
+    @GetMapping("/customers/list")
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    public ResponseEntity<ResponseMessage<List<CustomerDetail>>> listStudioCustomers() {
+        var out = service.listStudioCustomers();
+        return ResponseEntity.ok(ResponseMessage.success("OK", out));
+    }
+
+    @Operation(summary = "Studio: update a customer in my studio")
+    @PatchMapping("/customers/update/{customerUserId}")
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    public ResponseEntity<ResponseMessage<CustomerDetail>> updateCustomer(
+            @PathVariable UUID customerUserId,
+            @Valid @RequestBody CustomerProfileUpdateReq req) {
+        var out = service.updateCustomerAsStudio(customerUserId, req);
+        return ResponseEntity.ok(ResponseMessage.success("Updated", out));
+    }
+
+    @Operation(summary = "Studio: delete a customer in my studio")
+    @DeleteMapping("/customer/delete/{customerUserId}")
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    public ResponseEntity<ResponseMessage<Void>> deleteCustomer(@PathVariable UUID customerUserId) {
+        service.deleteCustomerAsStudio(customerUserId);
+        return ResponseEntity.ok(ResponseMessage.success("Deleted", null));
+    }
+
+
 }

@@ -30,7 +30,6 @@ public class HairStudioDetail extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String businessNo;
 
-    @Column(nullable = false, length = 100)
     private String ownerName;
 
     @Column(length = 50)

@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Tag(name = "Phone Auth", description = "Firebase Phone verification & password reset")
 @RestController
-@RequestMapping("/api/auth/phone")
+@RequestMapping("/api/studios")
 @RequiredArgsConstructor
 public class PhoneAuthController {
 
@@ -44,7 +44,7 @@ public class PhoneAuthController {
             summary = "Verify Firebase ID token (after client phone-SMS auth)",
             description = "Returns a short-lived resetToken for password reset."
     )
-    @PostMapping("/verify")
+    @PostMapping("/phone/verify")
     public ResponseEntity<ResponseMessage<VerifyRes>> verify(@RequestBody VerifyReq req) {
         // verify and decode token (checks revocation too, per service impl)
         FirebaseAuthService.DecodedFirebaseUser decoded = firebaseAuthService.verifyIdToken(req.idToken());
@@ -68,7 +68,7 @@ public class PhoneAuthController {
     }
 
     @Operation(summary = "Reset password using resetToken")
-    @PostMapping("/reset-password")
+    @PostMapping("/phone/reset-password")
     public ResponseEntity<ResponseMessage<String>> reset(@RequestBody ResetReq req) {
         ResetToken rt = TOKENS.remove(req.resetToken());
         if (rt == null || rt.expiresAt.isBefore(Instant.now())) {

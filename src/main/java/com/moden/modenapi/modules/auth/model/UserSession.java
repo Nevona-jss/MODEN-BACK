@@ -1,51 +1,54 @@
 package com.moden.modenapi.modules.auth.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
-
-import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
-@Getter
-@Setter
+@Entity
+@Table(name = "user_sessions")
+@Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Entity
-@Table(name = "user_sessions")
-@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-public class UserSession extends BaseEntity {
+public class UserSession  extends BaseEntity {
 
-    @Column(name = "user_id", columnDefinition = "uniqueidentifier", nullable = false)
+    @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    @Lob
-    private String deviceInfo; // OS, model info
+    /** Your JWT 'sid' (session id) */
+    @Column(name = "session_id", nullable = false, length = 100)
+    private String sessionId;
 
-    @Column(length = 100)
-    private String deviceId; // unique device ID
+    /** Never store raw token — store hash */
+    @Column(name = "access_token_hash", length = 255)
+    private String accessTokenHash;
 
-    @Column(length = 20)
-    private String deviceType; // Android, iOS, Web
+    /** If you issue refresh with JTI, store it here */
+    @Column(name = "refresh_token_id", length = 100)
+    private String refreshTokenId;
 
-    @Column(length = 20)
-    private String appVersion;
+    @Column(name = "ip", length = 64)
+    private String ip;
 
-    @Column(length = 45)
-    private String ipAddress;
-
-    @Lob
+    @Column(name = "user_agent", length = 255)
     private String userAgent;
 
-    @Column(length = 20)
-    private String loginMethod; // PASSWORD, KAKAO, APPLE, etc.
+    @Column(name = "revoked", nullable = false)
+    private boolean revoked = false;
 
-    private boolean isAutoLogin;
-    private boolean isPrimarySession;
-    private boolean revoked;
+    @Column(name = "revoked_at")
+    private OffsetDateTime revokedAt;
 
-    private Instant expiresAt;
-    private Instant lastActivityAt;
+    @Column(name = "last_used_at")
+    private OffsetDateTime lastUsedAt;
+
+    @Column(name = "access_expires_at")
+    private OffsetDateTime accessExpiresAt;
+
+    @Column(name = "refresh_expires_at")
+    private OffsetDateTime refreshExpiresAt;
+
+
 }
