@@ -50,6 +50,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
     /* ===================== CREATE ===================== */
 
     /** Studio creates designer. hairStudioId is taken from current studio (token principal). */
+    @Transactional
     public DesignerResponse createDesigner(HttpServletRequest request, DesignerCreateDto req) {
         ensureStudioRole();
 
@@ -58,24 +59,21 @@ public class DesignerService extends BaseService<DesignerDetail> {
         if (myStudios.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for current user");
         }
-        UUID studioId = myStudios.get(0).getId();
+        var studio = myStudios.get(0);
+        UUID studioId = studio.getId();
 
         String rawPwd = req.password() == null ? "" : req.password().trim();
         if (rawPwd.length() < 8) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password must be at least 8 characters");
         }
 
-        String loginCode = generateDesignerLoginCode();
-        int guard = 0;
-        while (designerRepository.existsByIdForLogin(loginCode)) {
-            if (++guard > 20) throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot generate unique login ID");
-            loginCode = generateDesignerLoginCode();
+        String phone = req.phone() == null ? "" : req.phone().trim();
+        if (phone.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Phone is required");
         }
-
-        // Upsert User (force role=DESIGNER)
-        String phone = req.phone().trim();
         String fullName = req.fullName() == null ? null : req.fullName().trim();
 
+        // 1) USER upsert (majburiy DESIGNER)
         User user = userRepository.findByPhone(phone).orElse(null);
         if (user == null) {
             user = User.builder()
@@ -85,11 +83,11 @@ public class DesignerService extends BaseService<DesignerDetail> {
                     .build();
         } else {
             user.setFullName(fullName);
-            user.setRole(Role.DESIGNER);
+            user.setRole(Role.DESIGNER); // sizning tanlovingiz bo‘yicha majburan DESIGNER
         }
         user = userRepository.save(user);
 
-        // Save password (AuthLocal)
+        // 2) AuthLocal (BCrypt hash)
         AuthLocal authLocal = authLocalRepository.findByUserId(user.getId()).orElse(null);
         if (authLocal == null) {
             authLocal = AuthLocal.builder()
@@ -97,13 +95,33 @@ public class DesignerService extends BaseService<DesignerDetail> {
                     .passwordHash(passwordEncoder.encode(rawPwd))
                     .passwordUpdatedAt(Instant.now())
                     .build();
-        } else {
+        } else if (!passwordEncoder.matches(rawPwd, authLocal.getPasswordHash())) {
             authLocal.setPasswordHash(passwordEncoder.encode(rawPwd));
             authLocal.setPasswordUpdatedAt(Instant.now());
         }
         authLocalRepository.save(authLocal);
 
-        // DesignerDetail
+        // 3) Idempotency: shu user allaqachon designer emasligini tekshiring
+        var existing = designerRepository.findByUserId(user.getId()).orElse(null);
+        if (existing != null) {
+            if (studioId.equals(existing.getHairStudioId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Designer already belongs to this studio");
+            } else {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Designer belongs to another studio");
+            }
+        }
+
+        // 4) Unique login code (bounded retries)
+        String loginCode = generateDesignerLoginCode();
+        int guard = 0;
+        while (designerRepository.existsByIdForLogin(loginCode)) {
+            if (++guard > 20) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot generate unique login ID");
+            }
+            loginCode = generateDesignerLoginCode();
+        }
+
+        // 5) DesignerDetail — MUHIM: role ni ham set qiling (DB: NOT NULL)
         DesignerDetail d = DesignerDetail.builder()
                 .userId(user.getId())
                 .hairStudioId(studioId)
@@ -114,10 +132,26 @@ public class DesignerService extends BaseService<DesignerDetail> {
                 .portfolioItemIds(new ArrayList<>())
                 .build();
 
-        d = create(d);
+        d = create(d); // persist/save
 
-        return mapToRes(d, user, List.of());
+        // 6) Portfolio mapping (hozircha bo‘sh)
+        List<PortfolioItemRes> portfolio = List.of();
+
+        // 7) Response
+        return new DesignerResponse(
+                d.getId(),
+                user.getId(),
+                studioId,
+                d.getIdForLogin(),
+                user.getRole(),          // Role.DESIGNER
+                user.getPhone(),
+                d.getBio(),
+                portfolio,
+                d.getCreatedAt(),
+                d.getUpdatedAt()
+        );
     }
+
 
     /* ===================== UPDATE (SELF) ===================== */
 
@@ -275,4 +309,5 @@ public class DesignerService extends BaseService<DesignerDetail> {
                 d.getUpdatedAt()
         );
     }
+
 }

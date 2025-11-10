@@ -61,9 +61,9 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
         // ⛔️ READ-ONLY on /me (these fields are NOT in StudioMeUpdateReq anyway)
         // - businessNo
         // - fullName (User)
-        // - ownerName
 
         // ✅ Editable (all optional)
+        if (req.ownerName() != null) {s.setOwnerName(req.ownerName());}
         if (req.studioPhone()  != null) s.setStudioPhone(req.studioPhone());
         if (req.address()      != null) s.setAddress(req.address());
         if (req.description()  != null) s.setDescription(req.description());

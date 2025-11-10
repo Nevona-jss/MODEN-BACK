@@ -12,7 +12,6 @@ import com.moden.modenapi.modules.designer.dto.DesignerResponse;
 import com.moden.modenapi.modules.designer.service.DesignerService;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
-import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import com.moden.modenapi.modules.studio.service.HairStudioService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,28 +36,7 @@ public class StudioAdminController {
     private final HairStudioService  studioService;
     private final DesignerService designerService;
     private final CustomerService service;
-    private final AuthService authService;
 
-
-
-    // ----------------------------------------------------------------------
-    // 🔹 SIGN UP (CUSTOMER)
-    // ----------------------------------------------------------------------
-    @PostMapping("/customer/register")
-    public ResponseEntity<ResponseMessage<Void>> signUp(@RequestBody CustomerSignUpRequest req) {
-        // Force CUSTOMER role for all signups
-        CustomerSignUpRequest fixedReq =
-                new CustomerSignUpRequest(req.fullName(), req.phone() );
-
-        authService.signUp(fixedReq, "default123!");
-
-        return ResponseEntity.ok(
-                ResponseMessage.<Void>builder()
-                        .success(true)
-                        .message("Customer successfully registered.")
-                        .build()
-        );
-    }
 
     @Operation(summary = "Studio: Update my profile (partial)")
     @PatchMapping(path = "/profile", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -72,15 +50,8 @@ public class StudioAdminController {
     // ----------------------------------------------------------------------
     // 🔹 STUDIO/ADMIN: Create designer
     // ----------------------------------------------------------------------
-    @Operation(
-            summary = "Create designer (Studio only)",
-            description = """
-                Creates a designer for the current studio (taken from token).
-                Server always generates `idForLogin` (DS-XXXXX-12345) and forces `role=DESIGNER`.
-                """
-    )
     @PreAuthorize("hasRole('HAIR_STUDIO')")
-    @PostMapping("/designer/register")
+    @PostMapping(value = "/designer/register", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ResponseMessage<DesignerResponse>> createDesigner(
             HttpServletRequest request,
             @Valid @RequestBody DesignerCreateDto req
@@ -89,6 +60,7 @@ public class StudioAdminController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ResponseMessage.success("Designer created successfully", created));
     }
+
 
     @Operation(
             summary = "Get designer by ID",

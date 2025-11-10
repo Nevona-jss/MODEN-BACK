@@ -18,6 +18,7 @@ public record StudioUpdateReq(
         @Size(max = 50)
         String businessNo,
 
+        @Size(min = 1, max = 100)
         String ownerName,
 
         @Schema(description = "Studio phone number", example = "02-123-4567")

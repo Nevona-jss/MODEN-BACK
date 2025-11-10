@@ -1,6 +1,8 @@
 package com.moden.modenapi.modules.designer.controller;
 
 import com.moden.modenapi.common.response.ResponseMessage;
+import com.moden.modenapi.modules.auth.service.AuthService;
+import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.modules.designer.dto.*;
 import com.moden.modenapi.modules.designer.service.DesignerService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +24,7 @@ import java.util.UUID;
 public class DesignerController {
 
     private final DesignerService designerService;
+    private final AuthService authService;
 
     @Operation(summary = "Update my profile (Designer only)")
     @PreAuthorize("hasRole('DESIGNER')")
@@ -53,6 +56,26 @@ public class DesignerController {
     ) {
         var list = designerService.getPortfolio(designerId);
         return ResponseEntity.ok(ResponseMessage.success("OK", list));
+    }
+
+    // ----------------------------------------------------------------------
+    // 🔹 SIGN UP (CUSTOMER)
+    // ----------------------------------------------------------------------
+    @PreAuthorize("hasRole('HAIR_STUDIO') or hasRole('DESIGNER')")
+    @PostMapping("/customer/register")
+    public ResponseEntity<ResponseMessage<Void>> signUp(@RequestBody CustomerSignUpRequest req) {
+        // Force CUSTOMER role for all signups
+        CustomerSignUpRequest fixedReq =
+                new CustomerSignUpRequest(req.fullName(), req.phone() );
+
+        authService.signUp(fixedReq, "default123!");
+
+        return ResponseEntity.ok(
+                ResponseMessage.<Void>builder()
+                        .success(true)
+                        .message("Customer successfully registered.")
+                        .build()
+        );
     }
 
 }
