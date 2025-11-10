@@ -67,6 +67,5 @@ app:
 # ========== FIREBASE CONFIG (works both locally & on Render) ==========
 
 firebase:
-  project-id: ${FIREBASE_PROJECT_ID:moden-bb3c2}
   credentials:
     base64: ${FIREBASE_SA_BASE64:}   # Render/Env orqali credential o‘qiladi
