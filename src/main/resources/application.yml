@@ -63,16 +63,13 @@ app:
     access-expiration-ms: 86400000
     refresh-expiration-ms: 2592000000
 
-# ---------- CHOOSE ONE OF THE TWO FIREBASE OPTIONS BELOW ----------
 
-# Option A: Base64 service account from environment (recommended for CI/servers)
+# ========== FIREBASE CONFIG (works both locally & on Render) ==========
+
 firebase:
-  projectId: ${FIREBASE_PROJECT_ID:}
+  projectId: ${FIREBASE_PROJECT_ID:moden-bb3c2}
   credentials:
+    # 1️⃣ LOCAL: classpath file (src/main/resources/firebase/serviceAccount.json)
+    # 2️⃣ RENDER: set FIREBASE_CREDENTIALS_FILE or FIREBASE_SA_BASE64 in environment
+    file: ${FIREBASE_CREDENTIALS_FILE:classpath:firebase/serviceAccount.json}
     base64: ${FIREBASE_SA_BASE64:}
-
-# Option B: Classpath JSON file (comment out Option A if you use this)
-# firebase:
-#   projectId: moden-bb3c2
-#   credentials:
-#     file: classpath:/firebase/serviceAccount.json
