@@ -9,8 +9,6 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
-
-
 @OpenAPIDefinition(
         info = @Info(title = "MODEN Hair Platform API", version = "1.0", description = "Backend API Documentation")
 )
@@ -20,8 +18,6 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 @SpringBootApplication
 public class ModenApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(ModenApplication.class, args);
-	}
-
+    public static void main(String[] args) {
+        SpringApplication.run(ModenApplication.class, args);}
 }

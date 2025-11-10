@@ -67,9 +67,6 @@ app:
 # ========== FIREBASE CONFIG (works both locally & on Render) ==========
 
 firebase:
-  projectId: ${FIREBASE_PROJECT_ID:moden-bb3c2}
+  project-id: ${FIREBASE_PROJECT_ID:moden-bb3c2}
   credentials:
-    # 1️⃣ LOCAL: classpath file (src/main/resources/firebase/serviceAccount.json)
-    # 2️⃣ RENDER: set FIREBASE_CREDENTIALS_FILE or FIREBASE_SA_BASE64 in environment
-    file: ${FIREBASE_CREDENTIALS_FILE:classpath:firebase/serviceAccount.json}
-    base64: ${FIREBASE_SA_BASE64:}
+    base64: ${FIREBASE_SA_BASE64:}   # Render/Env orqali credential o‘qiladi

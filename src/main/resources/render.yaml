@@ -9,3 +9,6 @@ services:
       - key: DB_USER
       - key: DB_PASS
       - key: JWT_SECRET
+      - key: FIREBASE_SA_BASE64         # ⬅️ Firebase serviceAccount.json ni Base64 ko‘rinishidagi qiymat
+      - key: FIREBASE_PROJECT_ID        # (ixtiyoriy) agar app’da ishlatsangiz
+      # - key: SPRING_PROFILES_ACTIVE   # (ixtiyoriy) dev/prod kabi profil kerak bo‘lsa
