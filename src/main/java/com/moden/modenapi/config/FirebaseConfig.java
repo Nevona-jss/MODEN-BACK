@@ -12,6 +12,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Objects;
 
@@ -24,7 +25,6 @@ public class FirebaseConfig {
         this.resourceLoader = resourceLoader;
     }
 
-    // old flat keys
     @Value("${firebase.service-account:}")
     private String serviceAccountPath;
 
@@ -34,7 +34,6 @@ public class FirebaseConfig {
     @Value("${firebase.database-url:}")
     private String databaseUrl;
 
-    // new nested keys
     @Value("${firebase.credentials.base64:}")
     private String credentialsBase64Nested;
 
@@ -42,11 +41,11 @@ public class FirebaseConfig {
     private String credentialsFileNested;
 
     private GoogleCredentials loadCredentials() throws IOException {
-        // 0) env fallbacks
+        // 0) Env fallbacks
         String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
-        String envB64  = System.getenv("FIREBASE_SA_BASE64");
+        String envB64 = System.getenv("FIREBASE_SA_BASE64");
 
-        // 1) base64: prefer nested > flat > env
+        // 1) Base64 preference: nested > flat > env
         String b64 = firstNonBlank(credentialsBase64Nested, credentialsBase64Flat, envB64);
         if (isNotBlank(b64)) {
             byte[] json = Base64.getDecoder().decode(b64);
@@ -55,25 +54,21 @@ public class FirebaseConfig {
             }
         }
 
-        // 2) file: prefer nested > old flat key
+        // 2) File preference: nested > flat
         String fileProp = firstNonBlank(credentialsFileNested, serviceAccountPath);
         if (isNotBlank(fileProp)) {
             Resource res = resourceLoader.getResource(fileProp);
             if (!res.exists()) {
-                // Support bare classpath without prefix & plain file paths
-                if (fileProp.startsWith("classpath:")) {
-                    String p = fileProp.substring("classpath:".length());
-                    try (InputStream in = Thread.currentThread().getContextClassLoader()
-                            .getResourceAsStream(p.startsWith("/") ? p.substring(1) : p)) {
-                        if (in == null) throw new FileNotFoundException("Service account not found on classpath: " + p);
-                        return GoogleCredentials.fromStream(in);
-                    }
-                } else {
-                    try (InputStream in = new FileInputStream(fileProp)) {
-                        return GoogleCredentials.fromStream(in);
-                    } catch (FileNotFoundException e) {
-                        throw new FileNotFoundException("Service account not found: " + fileProp);
-                    }
+                // Classpath support
+                if (!fileProp.contains(":")) { // assume classpath
+                    InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(fileProp);
+                    if (in != null) return GoogleCredentials.fromStream(in);
+                }
+                // Absolute/relative path
+                try (InputStream in = new FileInputStream(fileProp)) {
+                    return GoogleCredentials.fromStream(in);
+                } catch (FileNotFoundException e) {
+                    throw new FileNotFoundException("Firebase service account not found: " + fileProp);
                 }
             } else {
                 try (InputStream in = res.getInputStream()) {
@@ -82,19 +77,17 @@ public class FirebaseConfig {
             }
         }
 
-        // 3) GOOGLE_APPLICATION_CREDENTIALS absolute path
+        // 3) GOOGLE_APPLICATION_CREDENTIALS
         if (isNotBlank(envPath)) {
             try (InputStream in = new FileInputStream(envPath)) {
                 return GoogleCredentials.fromStream(in);
             }
         }
 
-        // 4) last resort: classpath default
+        // 4) Classpath default
         InputStream in = Thread.currentThread().getContextClassLoader()
                 .getResourceAsStream("firebase-service-account.json");
-        if (in != null) {
-            return GoogleCredentials.fromStream(in);
-        }
+        if (in != null) return GoogleCredentials.fromStream(in);
 
         throw new IllegalStateException(
                 "Firebase credentials not found. Provide one of:\n" +
@@ -107,7 +100,7 @@ public class FirebaseConfig {
     @Bean
     @ConditionalOnMissingBean(FirebaseApp.class)
     public FirebaseApp firebaseApp() throws IOException {
-        // reuse DEFAULT if already initialized (devtools/hot-reload safe)
+        // Reuse DEFAULT_APP if exists
         for (FirebaseApp app : FirebaseApp.getApps()) {
             if (Objects.equals(app.getName(), FirebaseApp.DEFAULT_APP_NAME)) {
                 return app;
@@ -130,10 +123,11 @@ public class FirebaseConfig {
         return FirebaseAuth.getInstance(app);
     }
 
-    // helpers
+    // Helper methods
     private static String firstNonBlank(String... vals) {
         for (String v : vals) if (v != null && !v.isBlank()) return v;
         return null;
     }
+
     private static boolean isNotBlank(String s) { return s != null && !s.isBlank(); }
 }
