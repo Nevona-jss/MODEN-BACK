@@ -2,18 +2,21 @@ package com.moden.modenapi.modules.product.repository;
 
 import com.moden.modenapi.common.repository.BaseRepository;
 import com.moden.modenapi.modules.product.model.StudioProduct;
-import org.springframework.data.jpa.repository.Query;
+
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface StudioProductRepository extends BaseRepository<StudioProduct, UUID> {
 
-    // 🔹 Faqat o‘chirilmagan mahsulotlar (deletedAt IS NULL)
-    @Query("SELECT p FROM StudioProduct p WHERE p.studioId = :studioId AND p.deletedAt IS NULL ORDER BY p.createdAt DESC")
-    List<StudioProduct> findAllActiveByStudioId(UUID studioId);
+    // 단건(삭제되지 않은 것만)
+    Optional<StudioProduct> findByIdAndDeletedAtIsNull(UUID id);
 
-    // 🔹 Faqat faol (o‘chirilmagan) mahsulot
-    @Query("SELECT p FROM StudioProduct p WHERE p.id = :id AND p.deletedAt IS NULL")
-    Optional<StudioProduct> findActiveById(UUID id);
+    // 스튜디오별 목록(삭제되지 않은 것만, 최신순)
+    List<StudioProduct> findAllByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID studioId);
+
+    // BaseService에서 호출하던 이름을 그대로 맞추기 위한 alias
+    default Optional<StudioProduct> findActiveById(UUID id) {
+        return findByIdAndDeletedAtIsNull(id);
+    }
 }

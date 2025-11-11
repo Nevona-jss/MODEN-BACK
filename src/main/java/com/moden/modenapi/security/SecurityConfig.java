@@ -68,7 +68,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/designers/**").hasRole("DESIGNER")
                         .requestMatchers("/api/studios/**").hasRole("HAIR_STUDIO")
                         .requestMatchers("/api/customers/**").hasRole("CUSTOMER")
-
+                        .requestMatchers("/swagger-ui/**", "/api-docs/**").permitAll()
                         // 그 외
                         .anyRequest().permitAll()
                 );

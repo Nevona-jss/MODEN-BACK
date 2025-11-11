@@ -28,44 +28,52 @@ public class StudioProductService extends BaseService<StudioProduct> {
     }
 
     // 🔹 CREATE
-    public StudioProductRes createProduct(UUID studioId, StudioProductCreateReq req) {
-        StudioProduct product = StudioProduct.builder()
-                .studioId(studioId)
-                .name(req.name())
-                .category(req.category())
-                .type(req.type())
+    public StudioProductRes create(StudioProductCreateReq req) {
+        if (req.studioId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "studioId is required");
+        }
+        if (req.productName() == null || req.productName().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "productName is required");
+        }
+        if (req.price() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "price is required");
+        }
+
+        StudioProduct p = StudioProduct.builder()
+                .studioId(req.studioId())
+                .productName(req.productName().trim())
                 .price(req.price())
-                .stock(req.stock())
-                .image(req.image())
+                .notes(req.notes())
+                .volumeLiters(req.volumeLiters())
+                .designerTipPercent(req.designerTipPercent())
                 .build();
 
-        create(product);
-        return mapToRes(product);
+        StudioProduct saved = productRepository.save(p);
+        return mapToRes(saved);
     }
 
-    // 🔹 UPDATE
-    public StudioProductRes updateProduct(UUID productId, StudioProductUpdateReq req) {
-        StudioProduct product = productRepository.findActiveById(productId)
+    // 🔹 UPDATE (null 값은 미변경)
+    public StudioProductRes update(UUID productId, StudioProductUpdateReq req) {
+        StudioProduct p = productRepository.findActiveById(productId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found or deleted"));
 
-        if (req.name() != null) product.setName(req.name());
-        if (req.category() != null) product.setCategory(req.category());
-        if (req.type() != null) product.setType(req.type());
-        if (req.price() != null) product.setPrice(req.price());
-        if (req.stock() != null) product.setStock(req.stock());
-        if (req.image() != null) product.setImage(req.image());
+        if (req.productName() != null)        p.setProductName(req.productName().trim());
+        if (req.price() != null)              p.setPrice(req.price());
+        if (req.notes() != null)              p.setNotes(req.notes());
+        if (req.volumeLiters() != null)       p.setVolumeLiters(req.volumeLiters());
+        if (req.designerTipPercent() != null) p.setDesignerTipPercent(req.designerTipPercent());
 
-        product.setUpdatedAt(Instant.now());
-        update(product);
-        return mapToRes(product);
+        StudioProduct saved = productRepository.save(p);
+        return mapToRes(saved);
     }
 
     // 🔹 DELETE (soft delete)
-    public void deleteProduct(UUID productId) {
-        StudioProduct product = productRepository.findActiveById(productId)
+    public void softDelete(UUID productId) {
+        StudioProduct p = productRepository.findActiveById(productId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found or already deleted"));
-        product.setDeletedAt(Instant.now());
-        update(product);
+
+        p.setDeletedAt(Instant.now());
+        productRepository.save(p);
     }
 
     // 🔹 GET ONE (only non-deleted)
@@ -79,10 +87,9 @@ public class StudioProductService extends BaseService<StudioProduct> {
     // 🔹 GET ALL (only non-deleted)
     @Transactional(readOnly = true)
     public List<StudioProductRes> getAllByStudio(UUID studioId) {
-        return productRepository.findAllActiveByStudioId(studioId)
-                .stream()
-                .map(this::mapToRes)
-                .collect(Collectors.toList());
+        List<StudioProduct> list = productRepository
+                .findAllByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(studioId);
+        return list.stream().map(this::mapToRes).collect(Collectors.toList());
     }
 
     // 🔹 Mapper
@@ -90,12 +97,11 @@ public class StudioProductService extends BaseService<StudioProduct> {
         return new StudioProductRes(
                 p.getId(),
                 p.getStudioId(),
-                p.getName(),
-                p.getCategory(),
-                p.getType(),
+                p.getProductName(),
                 p.getPrice(),
-                p.getStock(),
-                p.getImage(),
+                p.getNotes(),
+                p.getVolumeLiters(),
+                p.getDesignerTipPercent(),
                 p.getCreatedAt(),
                 p.getUpdatedAt()
         );

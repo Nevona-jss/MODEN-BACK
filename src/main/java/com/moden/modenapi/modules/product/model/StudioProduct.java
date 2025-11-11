@@ -7,46 +7,44 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.util.UUID;
 
-/**
- * Represents a product (e.g., shampoo, color, or other item)
- * owned and managed by a specific hair studio.
- * Each salon registers and manages its own products.
- */
-@Getter
-@Setter
+@Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @Entity
 @Table(name = "studio_product")
-@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+@JsonIgnoreProperties({"hibernateLazyInitializer","handler"})
 public class StudioProduct extends BaseEntity {
 
-    // 🔹 Belongs to which studio
     @Column(name = "studio_id", columnDefinition = "uniqueidentifier", nullable = false)
-    private UUID studioId; // FK → hair_studio_detail.id
+    private UUID studioId;
 
-    // 🔹 Product fullName (required)
-    @Column(nullable = false, length = 150)
-    private String name;
+    @Column(name = "product_name", nullable = false, length = 150)
+    private String productName;
 
-    // 🔹 Product category (e.g., Haircare, Styling)
-    @Column(length = 100)
-    private String category;
-
-    // 🔹 Product type (e.g., Shampoo, Conditioner, Color)
-    @Column(length = 100)
-    private String type;
-
-    // 🔹 Image URL or path (optional)
-    @Column(name = "image", length = 500)
-    private String image;
-
-    // 🔹 Price of the product
-    @Column(precision = 10, scale = 2)
+    @Column(name = "price", precision = 10, scale = 0, nullable = false)
     private BigDecimal price;
 
-    // 🔹 Stock quantity (default 0)
-    @Column(nullable = false)
-    private int stock = 0;
+    /** 비고(제조사/용량 등) */
+    @Column(name = "notes", length = 500)
+    private String notes;
+
+    /** hajm (litr) — 0.5, 1.0 ... */
+    @Column(name = "volume_liters", precision = 7, scale = 2)
+    private BigDecimal volumeLiters;
+
+    /** dizayner tip (%) — 10.00 */
+    @Column(name = "designer_tip_percent", precision = 5, scale = 2)
+    private BigDecimal designerTipPercent;
+
+    @Transient
+    public BigDecimal getDesignerTipAmount() {
+        if (price == null || designerTipPercent == null) return BigDecimal.ZERO;
+        return price.multiply(designerTipPercent).divide(BigDecimal.valueOf(100));
+    }
+
+    @PrePersist
+    void prePersist() {
+        if (designerTipPercent == null) designerTipPercent = BigDecimal.ZERO;
+    }
 }

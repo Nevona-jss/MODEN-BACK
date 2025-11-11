@@ -1,20 +1,15 @@
 package com.moden.modenapi.modules.designer.controller;
 
 import com.moden.modenapi.common.response.ResponseMessage;
-import com.moden.modenapi.modules.auth.service.AuthService;
 import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.modules.customer.service.CustomerService;
 import com.moden.modenapi.modules.designer.dto.*;
 import com.moden.modenapi.modules.designer.service.DesignerService;
-import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.UUID;
 
@@ -26,6 +21,7 @@ public class DesignerController {
 
     private final DesignerService designerService;
     private final CustomerService customerService;
+
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @PostMapping("/customers/register")
     public ResponseEntity<ResponseMessage<Void>> registerCustomer(@RequestBody CustomerSignUpRequest req) {
