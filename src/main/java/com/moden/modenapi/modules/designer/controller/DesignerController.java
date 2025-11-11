@@ -44,27 +44,4 @@ public class DesignerController {
         var list = designerService.getPortfolio(designerId);
         return ResponseEntity.ok(ResponseMessage.success("OK", list));
     }
-
-    // ----------------------------------------------------------------------
-    // 🔹 SIGN UP (CUSTOMER)
-    // ----------------------------------------------------------------------
-    @PreAuthorize("hasRole('HAIR_STUDIO') or hasRole('DESIGNER')")
-    @PostMapping("/customer/register")
-    public ResponseEntity<ResponseMessage<Void>> signUp(@RequestBody CustomerSignUpRequest req) {
-
-        // Parolni qayerdan olasiz - prototip uchun default.
-        String defaultPassword = "default123!";
-
-        // Agar DTO’da studioId null bo‘lsa, service ichida current user’dan aniqlanadi
-        customerService.customerRegister(req, defaultPassword);
-
-        return ResponseEntity.ok(
-                ResponseMessage.<Void>builder()
-                        .success(true)
-                        .message("Customer successfully registered.")
-                        .build()
-        );
-    }
-
-
 }
