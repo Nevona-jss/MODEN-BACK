@@ -23,21 +23,16 @@ public class StudioProductService extends BaseService<StudioProduct> {
     private final StudioProductRepository productRepository;
 
     @Override
-    protected StudioProductRepository getRepository() {
-        return productRepository;
-    }
+    protected StudioProductRepository getRepository() { return productRepository; }
 
-    // 🔹 CREATE
+    // CREATE — studioId majburiy
     public StudioProductRes create(StudioProductCreateReq req) {
-        if (req.studioId() == null) {
+        if (req.studioId() == null)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "studioId is required");
-        }
-        if (req.productName() == null || req.productName().isBlank()) {
+        if (req.productName() == null || req.productName().isBlank())
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "productName is required");
-        }
-        if (req.price() == null) {
+        if (req.price() == null)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "price is required");
-        }
 
         StudioProduct p = StudioProduct.builder()
                 .studioId(req.studioId())
@@ -48,11 +43,10 @@ public class StudioProductService extends BaseService<StudioProduct> {
                 .designerTipPercent(req.designerTipPercent())
                 .build();
 
-        StudioProduct saved = productRepository.save(p);
-        return mapToRes(saved);
+        return mapToRes(productRepository.save(p));
     }
 
-    // 🔹 UPDATE (null 값은 미변경)
+    // UPDATE — null bo‘lmaganlar yangilanadi
     public StudioProductRes update(UUID productId, StudioProductUpdateReq req) {
         StudioProduct p = productRepository.findActiveById(productId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found or deleted"));
@@ -63,20 +57,17 @@ public class StudioProductService extends BaseService<StudioProduct> {
         if (req.volumeLiters() != null)       p.setVolumeLiters(req.volumeLiters());
         if (req.designerTipPercent() != null) p.setDesignerTipPercent(req.designerTipPercent());
 
-        StudioProduct saved = productRepository.save(p);
-        return mapToRes(saved);
+        return mapToRes(productRepository.save(p));
     }
 
-    // 🔹 DELETE (soft delete)
+    // DELETE (soft)
     public void softDelete(UUID productId) {
         StudioProduct p = productRepository.findActiveById(productId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found or already deleted"));
-
         p.setDeletedAt(Instant.now());
         productRepository.save(p);
     }
 
-    // 🔹 GET ONE (only non-deleted)
     @Transactional(readOnly = true)
     public StudioProductRes getProduct(UUID productId) {
         StudioProduct product = productRepository.findActiveById(productId)
@@ -84,26 +75,20 @@ public class StudioProductService extends BaseService<StudioProduct> {
         return mapToRes(product);
     }
 
-    // 🔹 GET ALL (only non-deleted)
     @Transactional(readOnly = true)
     public List<StudioProductRes> getAllByStudio(UUID studioId) {
-        List<StudioProduct> list = productRepository
-                .findAllByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(studioId);
-        return list.stream().map(this::mapToRes).collect(Collectors.toList());
+        if (studioId == null)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "studioId is required");
+        return productRepository
+                .findAllByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(studioId)
+                .stream().map(this::mapToRes).collect(Collectors.toList());
     }
 
-    // 🔹 Mapper
     private StudioProductRes mapToRes(StudioProduct p) {
         return new StudioProductRes(
-                p.getId(),
-                p.getStudioId(),
-                p.getProductName(),
-                p.getPrice(),
-                p.getNotes(),
-                p.getVolumeLiters(),
-                p.getDesignerTipPercent(),
-                p.getCreatedAt(),
-                p.getUpdatedAt()
+                p.getId(), p.getStudioId(), p.getProductName(), p.getPrice(),
+                p.getNotes(), p.getVolumeLiters(), p.getDesignerTipPercent(),
+                p.getCreatedAt(), p.getUpdatedAt()
         );
     }
 }

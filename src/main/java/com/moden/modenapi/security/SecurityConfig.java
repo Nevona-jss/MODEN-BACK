@@ -85,9 +85,7 @@ public class SecurityConfig {
         var cfg = new CorsConfiguration();
         // 예시: 필요한 도메인만 명시
         cfg.setAllowedOriginPatterns(List.of(
-                "https://dev.mycoffeeai.com",
-                "https://mycoffeeai.com",
-                "http://localhost:3000"
+                "http://localhost:5173"
         ));
         cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
