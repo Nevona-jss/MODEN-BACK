@@ -11,11 +11,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import com.moden.modenapi.modules.product.dto.*;
-import org.springframework.web.bind.annotation.*;
 
-
-@Tag(name = "HAIR-STUDIO PRODUCTS", description = "Studio/Designer manage products")
+@Tag(name = "HAIR-STUDIO PRODUCTS", description = "Only HAIR_STUDIO can manage products")
 @RestController
 @RequestMapping("/studios/products")
 @RequiredArgsConstructor
@@ -23,20 +20,18 @@ public class StudioProductController {
 
     private final StudioProductService productService;
 
-    // CREATE
-    @Operation(summary = "Create product (studioId comes in body)")
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER','ADMIN')")
-    @PostMapping
-    public ResponseEntity<StudioProductRes> createProduct(
-            @RequestBody StudioProductCreateReq req
-    ) {
+    // CREATE — studioId body ichida majburiy
+    @Operation(summary = "Create product (studioId in body, HAIR_STUDIO only)")
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PostMapping("/add")
+    public ResponseEntity<StudioProductRes> createProduct(@RequestBody StudioProductCreateReq req) {
         return ResponseEntity.ok(productService.create(req));
     }
 
     // UPDATE — partial
-    @Operation(summary = "Update product (partial)")
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER','ADMIN')")
-    @PatchMapping("/{productId}")
+    @Operation(summary = "Update product (partial, HAIR_STUDIO only)")
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PatchMapping("/edit/{productId}")
     public ResponseEntity<StudioProductRes> updateProduct(
             @PathVariable UUID productId,
             @RequestBody StudioProductUpdateReq req
@@ -45,29 +40,27 @@ public class StudioProductController {
     }
 
     // DELETE (soft)
-    @Operation(summary = "Soft delete product")
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER','ADMIN')")
-    @DeleteMapping("/{productId}")
+    @Operation(summary = "Soft delete product (HAIR_STUDIO only)")
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @DeleteMapping("/delete/{productId}")
     public ResponseEntity<Map<String,String>> deleteProduct(@PathVariable UUID productId) {
         productService.softDelete(productId);
         return ResponseEntity.ok(Map.of("message","Deleted"));
     }
 
     // GET ONE
-    @Operation(summary = "Get product detail")
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER','ADMIN')")
-    @GetMapping("/{productId}")
+    @Operation(summary = "Get product detail (HAIR_STUDIO only)")
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @GetMapping("/get/{productId}")
     public ResponseEntity<StudioProductRes> getProduct(@PathVariable UUID productId) {
         return ResponseEntity.ok(productService.getProduct(productId));
     }
 
-    // LIST — studioId query param orqali (?studioId=...)
-    @Operation(summary = "List products by studioId (query param)")
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER','ADMIN')")
-    @GetMapping
-    public ResponseEntity<List<StudioProductRes>> listProducts(
-            @RequestParam(name = "studioId") UUID studioId
-    ) {
-        return ResponseEntity.ok(productService.getAllByStudio(studioId));
+    // LIST — studioId query param (?studioId=...)
+    @Operation(summary = "List products by studioId (query param, HAIR_STUDIO only)")
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @GetMapping("/list")
+    public ResponseEntity<List<StudioProductRes>> listMyProducts() {
+        return ResponseEntity.ok(productService.getAllByStudio());
     }
 }

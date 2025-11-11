@@ -4,8 +4,11 @@ import com.moden.modenapi.common.service.BaseService;
 import com.moden.modenapi.modules.product.dto.*;
 import com.moden.modenapi.modules.product.model.StudioProduct;
 import com.moden.modenapi.modules.product.repository.StudioProductRepository;
+import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -21,21 +24,22 @@ import java.util.stream.Collectors;
 public class StudioProductService extends BaseService<StudioProduct> {
 
     private final StudioProductRepository productRepository;
+    private final HairStudioDetailRepository studioDetailRepository; // ✅ token'dan studio aniqlash uchun
 
     @Override
     protected StudioProductRepository getRepository() { return productRepository; }
 
-    // CREATE — studioId majburiy
+    // 🔹 CREATE — studioId ni token’dan avtomatik qo'yamiz (body’dagi studioId e’tiborga olinmaydi)
     public StudioProductRes create(StudioProductCreateReq req) {
-        if (req.studioId() == null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "studioId is required");
+        UUID studioId = resolveMyStudioId();  // ✅ token → studioId
+
         if (req.productName() == null || req.productName().isBlank())
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "productName is required");
         if (req.price() == null)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "price is required");
 
         StudioProduct p = StudioProduct.builder()
-                .studioId(req.studioId())
+                .studioId(studioId)
                 .productName(req.productName().trim())
                 .price(req.price())
                 .notes(req.notes())
@@ -46,7 +50,7 @@ public class StudioProductService extends BaseService<StudioProduct> {
         return mapToRes(productRepository.save(p));
     }
 
-    // UPDATE — null bo‘lmaganlar yangilanadi
+    // 🔹 UPDATE — null bo‘lmaganlar yangilanadi (save() YO'Q!)
     public StudioProductRes update(UUID productId, StudioProductUpdateReq req) {
         StudioProduct p = productRepository.findActiveById(productId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found or deleted"));
@@ -57,13 +61,18 @@ public class StudioProductService extends BaseService<StudioProduct> {
         if (req.volumeLiters() != null)       p.setVolumeLiters(req.volumeLiters());
         if (req.designerTipPercent() != null) p.setDesignerTipPercent(req.designerTipPercent());
 
-        return mapToRes(productRepository.save(p));
+
+        return mapToRes(p);
     }
 
-    // DELETE (soft)
+
+    // 🔹 DELETE (soft)
     public void softDelete(UUID productId) {
         StudioProduct p = productRepository.findActiveById(productId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found or already deleted"));
+
+        // (ixtiyoriy) egasi tekshiruvi kerak bo‘lsa, shu yerda tekshiring.
+
         p.setDeletedAt(Instant.now());
         productRepository.save(p);
     }
@@ -75,12 +84,12 @@ public class StudioProductService extends BaseService<StudioProduct> {
         return mapToRes(product);
     }
 
+    // 🔹 LIST — studioId berilmasa, token’dan avtomatik aniqlaymiz
     @Transactional(readOnly = true)
-    public List<StudioProductRes> getAllByStudio(UUID studioId) {
-        if (studioId == null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "studioId is required");
+    public List<StudioProductRes> getAllByStudio() {
+        UUID sid = resolveMyStudioId(); // ✅ token → studioId
         return productRepository
-                .findAllByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(studioId)
+                .findAllByStudioIdAndDeletedAtIsNullOrderByProductNameAsc(sid)
                 .stream().map(this::mapToRes).collect(Collectors.toList());
     }
 
@@ -90,5 +99,27 @@ public class StudioProductService extends BaseService<StudioProduct> {
                 p.getNotes(), p.getVolumeLiters(), p.getDesignerTipPercent(),
                 p.getCreatedAt(), p.getUpdatedAt()
         );
+    }
+
+    /* ================= Helpers ================= */
+
+    /** Joriy foydalanuvchi userId (UUID) — OAuth2siz, Authentication#getName() dan */
+    private UUID currentUserId() {
+        Authentication a = SecurityContextHolder.getContext().getAuthentication();
+        if (a == null || !a.isAuthenticated() || a.getName() == null)
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        try {
+            return UUID.fromString(a.getName());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Principal name is not a UUID: " + a.getName());
+        }
+    }
+
+    /** Token’dagi userId orqali bog‘langan studioning ID sini topish */
+    private UUID resolveMyStudioId() {
+        UUID userId = currentUserId();
+        return studioDetailRepository.findByUserId(userId)
+                .map(s -> s.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for current user"));
     }
 }

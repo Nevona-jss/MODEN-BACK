@@ -27,10 +27,10 @@ public interface HairStudioDetailRepository extends BaseRepository<HairStudioDet
     """)
     List<HairStudioDetail> findActiveByUserIdOrderByUpdatedDesc(@Param("userId") UUID userId,
                                                                 org.springframework.data.domain.Pageable pageable);
+    @Query("select h from HairStudioDetail h where h.userId = :userId")
+    Optional<HairStudioDetail> findByUserId(@Param("userId") UUID userId);
 
-    // Quyidagilar faqat idForLogin maydoni bo'lsa kerak bo'ladi:
     boolean existsByIdForLogin(String idForLogin);
-    boolean existsByIdForLoginIgnoreCase(String idForLogin);
-    Optional<HairStudioDetail> findByIdForLogin(String idForLogin);
+
     Optional<HairStudioDetail> findByIdForLoginIgnoreCase(String idForLogin);
 }

@@ -22,6 +22,7 @@ public class StudioProduct extends BaseEntity {
     @Column(name = "product_name", nullable = false, length = 150)
     private String productName;
 
+
     @Column(name = "price", precision = 10, scale = 0, nullable = false)
     private BigDecimal price;
 

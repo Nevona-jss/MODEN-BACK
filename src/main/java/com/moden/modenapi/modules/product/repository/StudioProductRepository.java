@@ -2,13 +2,16 @@ package com.moden.modenapi.modules.product.repository;
 
 import com.moden.modenapi.common.repository.BaseRepository;
 import com.moden.modenapi.modules.product.model.StudioProduct;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+@Repository
 public interface StudioProductRepository extends BaseRepository<StudioProduct, UUID> {
 
+    List<StudioProduct> findAllByStudioIdAndDeletedAtIsNullOrderByProductNameAsc(UUID studioId);
     // 단건(삭제되지 않은 것만)
     Optional<StudioProduct> findByIdAndDeletedAtIsNull(UUID id);
 
@@ -19,4 +22,5 @@ public interface StudioProductRepository extends BaseRepository<StudioProduct, U
     default Optional<StudioProduct> findActiveById(UUID id) {
         return findByIdAndDeletedAtIsNull(id);
     }
+
 }
