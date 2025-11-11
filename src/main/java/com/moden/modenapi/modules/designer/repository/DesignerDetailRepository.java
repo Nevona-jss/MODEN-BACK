@@ -12,8 +12,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface DesignerDetailRepository extends BaseRepository<DesignerDetail, UUID> {
-
     Optional<DesignerDetail> findByUserIdAndDeletedAtIsNull(UUID userId);
+    Optional<DesignerDetail> findByIdAndDeletedAtIsNull(UUID id);
 
     boolean existsByIdForLogin(String idForLogin);
 

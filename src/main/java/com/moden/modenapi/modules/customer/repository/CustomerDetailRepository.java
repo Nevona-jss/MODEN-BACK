@@ -14,29 +14,16 @@ import java.util.UUID;
 @Repository
 public interface CustomerDetailRepository extends BaseRepository<CustomerDetail, UUID> {
 
+
     @Query("select c from CustomerDetail c where c.userId = :userId and c.deletedAt is null")
     Optional<CustomerDetail> findActiveByUserId(@Param("userId") UUID userId);
 
     @Query("""
-        select c from CustomerDetail c
-        where c.studioId = :studioId and c.deletedAt is null
-        order by coalesce(c.updatedAt, c.createdAt) desc
-    """)
-    List<CustomerDetail> findAllActiveByStudio(@Param("studioId") UUID studioId);
-
-    @Query("""
-        select c from CustomerDetail c
-        where c.deletedAt is null
-          and (
-               c.designerId = :designerDetailId
-            or c.designerId = :designerUserId
-          )
-        order by coalesce(c.updatedAt, c.createdAt) desc
-    """)
-    List<CustomerDetail> findAllActiveForDesigner(
-            @Param("designerDetailId") UUID designerDetailId,
-            @Param("designerUserId")   UUID designerUserId
-    );
+    select c from CustomerDetail c
+    where c.studioId = :studioId
+      and c.deletedAt is null
+  """)
+    List<CustomerDetail> findAllByStudio(@Param("studioId") UUID studioId);
 
     @Query("""
         select c from CustomerDetail c

@@ -38,24 +38,6 @@ public class AuthService {
     private final CustomerDetailRepository customerDetailRepository;
     private final UserSessionService userSessionService;
 
-    // ----------------------------------------------------------------------
-    // Sign Up
-    // ----------------------------------------------------------------------
-    @Transactional
-    public void signUp(CustomerSignUpRequest req, String rawPassword) {
-        userRepository.findByPhone(req.phone()).ifPresent(u -> {
-            throw new IllegalArgumentException("User already registered with this phone number.");
-        });
-
-        User user = User.builder()
-                .fullName(req.fullName())
-                .phone(req.phone())
-                .role(Role.CUSTOMER)
-                .build();
-
-        userRepository.save(user);
-        authLocalService.createOrUpdatePassword(user.getId(), rawPassword);
-    }
 
     // ----------------------------------------------------------------------
     // Name + Phone login
@@ -184,10 +166,10 @@ public class AuthService {
 
         UUID userId = user.getId();
 
-        if (hairStudioDetailRepository.findByUserId(userId).isPresent()) {
+        if (hairStudioDetailRepository.findByUserIdAndDeletedAtIsNull(userId).isPresent()) {
             return Role.HAIR_STUDIO;
         }
-        if (designerDetailRepository.findByUserId(userId).isPresent()) {
+        if (designerDetailRepository.findByUserIdAndDeletedAtIsNull(userId).isPresent()) {
             return Role.DESIGNER;
         }
         if (customerDetailRepository.findByUserId(userId).isPresent()) {
@@ -211,26 +193,25 @@ public class AuthService {
                 if (cd != null) { detailId = cd.getId(); detailName = DisplayNameUtil.extract(cd); }
             }
             case DESIGNER -> {
-                var dd = designerDetailRepository.findByUserId(userId).orElse(null);
+                var dd = designerDetailRepository.findByUserIdAndDeletedAtIsNull(userId).orElse(null);
                 if (dd != null) { detailId = dd.getId(); detailName = DisplayNameUtil.extract(dd); }
             }
             case HAIR_STUDIO -> {
-                var sd = hairStudioDetailRepository.findByUserId(userId).orElse(null);
+                var sd = hairStudioDetailRepository.findByUserIdAndDeletedAtIsNull(userId).orElse(null);
                 if (sd != null) { detailId = sd.getId(); detailName = DisplayNameUtil.extract(sd); }
             }
             case ADMIN -> {
-                var p = userRepository.findProfileByUserId(userId).orElse(null);
-                if (p != null) { detailId = p.getId(); detailName = p.getDisplayName(); }
+                // ❗ findProfileByUserId() proektsiyasida getId() bo'lmagani uchun
+                // vaqtincha foydalanuvchining ma'lumotlari bilan to'ldiramiz (yoki 5-banddagi projection’ni qo‘llang)
+                detailId = user.getId();
+                detailName = (user.getFullName() != null && !user.getFullName().isBlank())
+                        ? user.getFullName() : String.valueOf(user.getId());
             }
             default -> {}
         }
 
         if (detailName == null || detailName.isBlank()) detailName = user.getFullName();
-        if (detailName == null || detailName.isBlank()) {
-            detailName = userRepository.findProfileByUserId(userId)
-                    .map(p -> p.getDisplayName())
-                    .orElse(String.valueOf(user.getId()));
-        }
+        if (detailName == null || detailName.isBlank()) detailName = String.valueOf(user.getId());
 
         return UserMeFullResponse.builder()
                 .userId(user.getId())

@@ -88,7 +88,6 @@ public class StudioAdminController {
         return ResponseEntity.ok(ResponseMessage.success("Designer soft-deleted", null));
     }
 
-    //need to fix
     @Operation(summary = "Studio: list my customers")
     @GetMapping("/customers/list")
     @PreAuthorize("hasRole('HAIR_STUDIO')")

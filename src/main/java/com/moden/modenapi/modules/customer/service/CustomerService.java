@@ -4,10 +4,11 @@ import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.service.BaseService;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
+import com.moden.modenapi.modules.auth.service.AuthLocalService;
 import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
+import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
-import com.moden.modenapi.modules.designer.model.DesignerDetail;
 import com.moden.modenapi.modules.designer.repository.DesignerDetailRepository;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
@@ -31,9 +32,100 @@ public class CustomerService extends BaseService<CustomerDetail> {
     private final UserRepository userRepo;
     private final CustomerDetailRepository customerRepo;
     private final HairStudioDetailRepository studioRepo;
-    private final DesignerDetailRepository designerRepo;
+    private final AuthLocalService authLocalService;
+    private final DesignerDetailRepository designerDetailRepository;
+
+
+    // CustomerService.java (parcha)
+    @Transactional
+    public void customerRegister(CustomerSignUpRequest req, String rawPassword) {
+        // 0) telefon unikal
+        userRepo.findByPhone(req.phone()).ifPresent(u -> {
+            throw new IllegalArgumentException("User already registered with this phone number.");
+        });
+
+        // 1) User
+        User user = User.builder()
+                .fullName(req.fullName())
+                .phone(req.phone())
+                .role(Role.CUSTOMER)
+                .build();
+        userRepo.save(user);
+        authLocalService.createOrUpdatePassword(user.getId(), rawPassword);
+
+        // 2) Studio (request'dagi studioId e'tiborga olinmaydi!)
+        UUID studioId = resolveStudioIdForCurrentActor(null);  // ❗ doim avtomatik
+
+        // 3) Designer (request'dagi designerId e'tiborga olinmaydi!)
+        UUID assignedDesignerId = resolveDesignerForAssignment(null, studioId); // ❗ doim avtomatik
+
+        // 4) CustomerDetail
+        CustomerDetail cd = CustomerDetail.builder()
+                .userId(user.getId())
+                .studioId(studioId)
+                .designerId(assignedDesignerId)  // null bo‘lishi mumkin
+                .email(null)
+                .consentMarketing(false)
+                .notificationEnabled(false)
+                .build();
+
+        customerRepo.save(cd);
+    }
+
+    /* ================= Helpers ================= */
+
+    // HAIR_STUDIO: principal = STUDIO ID
+// DESIGNER:    principal = DESIGNER USER ID -> DesignerDetail.hairStudioId
+    private UUID resolveStudioIdForCurrentActor(UUID ignored) {
+        if (hasRole("HAIR_STUDIO")) {
+            UUID studioId = currentStudioId(); // sizda principal studio UUID
+            requireStudio(studioId);
+            return studioId;
+        }
+        if (hasRole("DESIGNER")) {
+            UUID designerUserId = currentUserId();
+            var dd = designerDetailRepository.findByUserIdAndDeletedAtIsNull(designerUserId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Designer profile not found"));
+            UUID studioId = dd.getHairStudioId();
+            requireStudio(studioId);
+            return studioId;
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio context is required");
+    }
+
+    // DESIGNER aktor bo‘lsa va designerId kiritilmagan bo‘lsa — o‘zini tayinlash.
+// Aks holda (HAIR_STUDIO aktor), dizayner tayinlanmasligi mumkin (null).
+    private UUID resolveDesignerForAssignment(UUID ignored, UUID studioIdOfCustomer) {
+        if (hasRole("DESIGNER")) {
+            UUID me = currentUserId(); // userId
+            var dd = designerDetailRepository.findByUserIdAndDeletedAtIsNull(me)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Designer profile not found"));
+            if (!studioIdOfCustomer.equals(dd.getHairStudioId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Designer not in this studio");
+            }
+            return dd.getId(); // CustomerDetail.designerId = DesignerDetail.id
+        }
+        // HAIR_STUDIO bo‘lsa — dizayner ixtiyoriy (null)
+        return null;
+    }
+
+
 
     /* -------------------- helpers -------------------- */
+
+    private UUID currentStudioId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        String principal = (auth.getPrincipal() instanceof String s) ? s : auth.getName();
+        try { return UUID.fromString(principal); }
+        catch (Exception e) { throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid principal (expected STUDIO ID)"); }
+    }
+
+    private HairStudioDetail requireStudio(UUID studioId) {
+        return studioRepo.findByIdAndDeletedAtIsNull(studioId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found or deleted"));
+    }
+
 
     private UUID currentUserId() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
@@ -53,11 +145,6 @@ public class CustomerService extends BaseService<CustomerDetail> {
     private HairStudioDetail requireStudioByOwner(UUID studioUserId) {
         return studioRepo.findByUserIdAndDeletedAtIsNull(studioUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for current user"));
-    }
-
-    private DesignerDetail requireDesignerByUser(UUID designerUserId) {
-        return designerRepo.findByUserIdAndDeletedAtIsNull(designerUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Designer not found for current user"));
     }
 
     private void applyProfile(CustomerDetail detail, CustomerProfileUpdateReq req) {
@@ -93,13 +180,13 @@ public class CustomerService extends BaseService<CustomerDetail> {
     }
 
     /* -------------------- STUDIO actions -------------------- */
-
     @Transactional(readOnly = true)
     public List<CustomerDetail> listStudioCustomers() {
-        UUID studioUserId = currentUserId();
-        HairStudioDetail studio = requireStudioByOwner(studioUserId);
-        return customerRepo.findAllActiveByStudio(studio.getId());
+        UUID studioId = currentStudioId();             // principal = STUDIO ID
+        requireStudio(studioId);
+        return customerRepo.findAllByStudio(studioId); // bevosita studioId bilan
     }
+
 
     @Transactional
     public CustomerDetail updateCustomerAsStudio(UUID customerUserId, CustomerProfileUpdateReq req) {
@@ -129,42 +216,7 @@ public class CustomerService extends BaseService<CustomerDetail> {
         customerRepo.save(target);
     }
 
-    /* -------------------- DESIGNER actions -------------------- */
 
-    @Transactional(readOnly = true)
-    public List<CustomerDetail> listDesignerCustomers() {
-        UUID designerUserId = currentUserId();
-        DesignerDetail d = requireDesignerByUser(designerUserId);
-        return customerRepo.findAllActiveForDesigner(d.getId(), designerUserId);
-    }
-
-    @Transactional
-    public CustomerDetail updateCustomerAsDesigner(UUID customerUserId, CustomerProfileUpdateReq req) {
-        UUID designerUserId = currentUserId();
-        DesignerDetail d = requireDesignerByUser(designerUserId);
-
-        CustomerDetail target = customerRepo.findOneActiveForDesigner(customerUserId, d.getId(), designerUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not assigned to this designer"));
-
-        applyProfile(target, req);
-        return customerRepo.save(target);
-    }
-
-    @Transactional
-    public void deleteCustomerAsDesigner(UUID customerUserId) {
-        UUID designerUserId = currentUserId();
-        DesignerDetail d = requireDesignerByUser(designerUserId);
-
-        CustomerDetail target = customerRepo.findOneActiveForDesigner(customerUserId, d.getId(), designerUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not assigned to this designer"));
-
-        userRepo.findActiveById(customerUserId).ifPresent(u -> {
-            u.setDeletedAt(Instant.now());
-            userRepo.save(u);
-        });
-        target.setDeletedAt(Instant.now());
-        customerRepo.save(target);
-    }
 
     @Override
     protected JpaRepository<CustomerDetail, UUID> getRepository() {

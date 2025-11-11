@@ -67,8 +67,11 @@ public class AuthController {
             HttpServletResponse response
     ) {
         LoginResStudioAndDesigner out = idLoginService.login(req);
+
+        // ✅ RT → HttpOnly Cookie
         CookieUtil.setRefreshTokenCookie(response, request, out.refreshToken());
 
+        // Body → faqat AT va meta (RT ni body’da yubormaymiz)
         Map<String, Object> body = Map.of(
                 "accessToken", out.accessToken(),
                 "role",        out.role(),
@@ -78,6 +81,8 @@ public class AuthController {
         );
         return ResponseEntity.ok(ResponseMessage.success("Login successful", body));
     }
+
+
 
     @PostMapping("/login")
     public ResponseEntity<ResponseMessage<Map<String, String>>> signIn(
@@ -96,6 +101,7 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+        // 1) Cookie'dan refresh_token ni o'qing (null-safe)
         String refreshToken = Arrays.stream(
                         Optional.ofNullable(request.getCookies()).orElse(new Cookie[0]))
                 .filter(c -> "refresh_token".equals(c.getName()))
@@ -103,23 +109,42 @@ public class AuthController {
                 .findFirst()
                 .orElse(null);
 
-        if (refreshToken == null || !jwtProvider.validateToken(refreshToken)) {
+        if (refreshToken == null || refreshToken.isBlank()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ResponseMessage.failure("Invalid or missing refresh token"));
         }
 
+        // 2) RT ni tekshirish (mavjud validatsiya)
+        if (!jwtProvider.validateToken(refreshToken)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ResponseMessage.failure("Invalid or missing refresh token"));
+        }
+
+        // 3) Claimlar → yangi AT
         String userId = jwtProvider.getUserId(refreshToken);
-        String role   = jwtProvider.getUserRole(refreshToken);
+        String role   = jwtProvider.getUserRole(refreshToken); // RT ichida role bo'lmasa, null qaytishi mumkin
         String newAccessToken = jwtProvider.generateAccessToken(userId, role);
 
+        // 4) Render/Proxy orqasida HTTPS aniqlash: isSecure() || X-Forwarded-Proto=https
+        boolean secure = request.isSecure()
+                || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
+        String sameSite = secure ? "None" : "Lax"; // HTTP devda Lax bo'lmasa cookie yuborilmaydi
+
+        // 5) RT cookie'ni qayta yozish (rotation qilmayapmiz, mavjud RT ni saqlab qo'yish)
         ResponseCookie cookie = ResponseCookie.from("refresh_token", refreshToken)
-                .httpOnly(true).secure(true).sameSite("None")
-                .path("/").maxAge(Duration.ofDays(30)).build();
+                .httpOnly(true)
+                .secure(secure)          // HTTPS bo'lsa true bo'ladi
+                .sameSite(sameSite)      // HTTPS: None, HTTP(dev): Lax
+                .path("/")
+                .maxAge(Duration.ofDays(30))
+                .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
+        // 6) Body → faqat yangi AT
         Map<String, String> data = Map.of("accessToken", newAccessToken);
         return ResponseEntity.ok(ResponseMessage.success("Token refreshed successfully", data));
     }
+
 
     // ----------------------------------------------------------------------
     // Logout → delegate to service (supports ?all=true)

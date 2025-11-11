@@ -3,6 +3,7 @@ package com.moden.modenapi.modules.designer.controller;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.modules.auth.service.AuthService;
 import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
+import com.moden.modenapi.modules.customer.service.CustomerService;
 import com.moden.modenapi.modules.designer.dto.*;
 import com.moden.modenapi.modules.designer.service.DesignerService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,31 +25,17 @@ import java.util.UUID;
 public class DesignerController {
 
     private final DesignerService designerService;
-    private final AuthService authService;
-
-    @Operation(summary = "Update my profile (Designer only)")
-    @PreAuthorize("hasRole('DESIGNER')")
-    @PatchMapping("/profile")
-    public ResponseEntity<ResponseMessage<DesignerResponse>> updateMyProfile(
-            HttpServletRequest request,
-            @Valid @RequestBody DesignerUpdateReq req
-    ) {
-        var out = designerService.updateOwnProfile(request, req);
-        return ResponseEntity.ok(ResponseMessage.success("Profile updated", out));
-    }
-
-
-    @Operation(summary = "Add portfolio items (Studio owner of designer OR the designer)")
+    private final CustomerService customerService;
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
-    @PostMapping("/{designerId}/add/portfolio")
-    public ResponseEntity<ResponseMessage<List<PortfolioItemRes>>> addPortfolio(
-            HttpServletRequest request,
-            @PathVariable UUID designerId,
-            @Valid @RequestBody PortfolioAddReq req
-    ) {
-        var list = designerService.addPortfolioItems(request, designerId, req);
-        return ResponseEntity.ok(ResponseMessage.success("Portfolio updated", list));
+    @PostMapping("/customers/register")
+    public ResponseEntity<ResponseMessage<Void>> registerCustomer(@RequestBody CustomerSignUpRequest req) {
+        customerService.customerRegister(req, "default123!");
+        return ResponseEntity.ok(ResponseMessage.<Void>builder()
+                .success(true)
+                .message("Customer registered (studio/designer auto-assigned).")
+                .build());
     }
+
 
     @GetMapping("/{id}/portfolio")
     public ResponseEntity<ResponseMessage<List<PortfolioItemRes>>> getPortfolio(
@@ -64,11 +51,12 @@ public class DesignerController {
     @PreAuthorize("hasRole('HAIR_STUDIO') or hasRole('DESIGNER')")
     @PostMapping("/customer/register")
     public ResponseEntity<ResponseMessage<Void>> signUp(@RequestBody CustomerSignUpRequest req) {
-        // Force CUSTOMER role for all signups
-        CustomerSignUpRequest fixedReq =
-                new CustomerSignUpRequest(req.fullName(), req.phone() );
 
-        authService.signUp(fixedReq, "default123!");
+        // Parolni qayerdan olasiz - prototip uchun default.
+        String defaultPassword = "default123!";
+
+        // Agar DTO’da studioId null bo‘lsa, service ichida current user’dan aniqlanadi
+        customerService.customerRegister(req, defaultPassword);
 
         return ResponseEntity.ok(
                 ResponseMessage.<Void>builder()
@@ -77,5 +65,6 @@ public class DesignerController {
                         .build()
         );
     }
+
 
 }

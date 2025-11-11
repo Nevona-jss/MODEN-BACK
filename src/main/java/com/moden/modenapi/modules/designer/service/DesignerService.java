@@ -222,43 +222,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
         softDelete(d.getId()); // BaseEntity.deletedAt ga vaqt yoziladi
     }
 
-    /* ===================== PORTFOLIO ===================== */
-
-    /** Portfolio add (Studio of this designer, or the designer himself) */
-    public List<PortfolioItemRes> addPortfolioItems(HttpServletRequest request, UUID designerId, PortfolioAddReq req) {
-        // Studio yoki o‘zi – bu tekshiruvni controller darajasida role bilan cheklash mumkin.
-        var d = designerRepository.findActiveById(designerId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Designer not found"));
-
-        List<String> paths = Optional.ofNullable(req.paths()).orElseGet(List::of);
-        List<String> captions = Optional.ofNullable(req.captions()).orElseGet(List::of);
-
-        if (paths.isEmpty()) return getPortfolio(designerId);
-
-        List<UUID> newIds = new ArrayList<>();
-        IntStream.range(0, paths.size()).forEach(i -> {
-            String url = "/uploads/" + paths.get(i); // frontend /api/uploads dan olgan relPath
-            String caption = (i < captions.size()) ? captions.get(i) : null;
-
-            DesignerPortfolioItem item = DesignerPortfolioItem.builder()
-                    .designerId(designerId)
-                    .imageUrl(url)
-                    .caption(caption)
-                    .build();
-            portfolioRepo.save(item);
-            newIds.add(item.getId());
-        });
-
-        List<UUID> order = Optional.ofNullable(d.getPortfolioItemIds()).orElseGet(ArrayList::new);
-        order.addAll(newIds);
-        d.setPortfolioItemIds(order);
-        update(d);
-
-        return getPortfolio(designerId);
-    }
-
     /* ===================== Helpers ===================== */
-
     private void ensureStudioRole() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         boolean ok = auth != null && auth.getAuthorities() != null &&

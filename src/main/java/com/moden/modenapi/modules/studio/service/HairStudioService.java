@@ -2,6 +2,7 @@ package com.moden.modenapi.modules.studio.service;
 
 import com.moden.modenapi.common.service.BaseService;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
+import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
@@ -107,50 +108,8 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
         );
     }
 
+    
 
-    @Transactional(readOnly = true)
-    public List<Map<String, Object>> listMyCustomers(UUID userId) {
-        UUID studioId = studioRepository
-                .findActiveByUserIdOrderByUpdatedDesc(userId, PageRequest.of(0, 1))
-                .stream().findFirst().map(HairStudioDetail::getId)
-                .or(() -> studioRepository.findByUserIdAndDeletedAtIsNull(userId).map(HairStudioDetail::getId))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio not found"));
-
-        var rows = customerRepo.findCustomerRowsForStudio(studioId);
-
-        // Collect userIds for bulk lookup
-        var userIds = rows.stream()
-                .map(r -> (UUID) r[1])
-                .collect(Collectors.toSet());
-
-        var users = userRepo.findAllById(userIds).stream()
-                .collect(Collectors.toMap(u -> u.getId(), u -> u));  // Map<UUID, User>
-
-        List<Map<String, Object>> items = new ArrayList<>(rows.size());
-        for (Object[] r : rows) {
-            UUID cid      = (UUID) r[0];
-            UUID uid      = (UUID) r[1];
-            String pimg   = (String) r[2];
-            Instant cAt   = (r[3] instanceof Timestamp ts) ? ts.toInstant() : null;
-            Instant uAt   = (r[4] instanceof Timestamp ts) ? ts.toInstant() : null;
-
-            var u = users.get(uid); // may be null if not found
-            String fullName = (u != null && u.getFullName() != null && !u.getFullName().isBlank())
-                    ? u.getFullName() : null;
-            String phone = (u != null) ? u.getPhone() : null;
-
-            items.add(Map.of(
-                    "id", cid,
-                    "userId", uid,
-                    "fullName", fullName,
-                    "phone", phone,
-                    "profileImageUrl", pimg,
-                    "createdAt", cAt,
-                    "updatedAt", uAt
-            ));
-        }
-        return items;
-    }
     public UUID getCurrentUserId() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "No auth");

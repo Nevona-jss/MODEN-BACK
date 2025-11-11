@@ -23,10 +23,10 @@ public class CustomerDetail extends BaseEntity {
     @Column(name = "user_id", columnDefinition = "uniqueidentifier", nullable = false, unique = true)
     private UUID userId;
 
-    @Column(name = "designer_id", columnDefinition = "uniqueidentifier")
+    @Column(name = "designer_id", columnDefinition = "uniqueidentifier", nullable = false)
     private UUID designerId;
 
-    @Column(name = "studio_id", columnDefinition = "uniqueidentifier")
+    @Column(name = "studio_id", columnDefinition = "uniqueidentifier",nullable = false)
     private  UUID studioId;
 
     @Column(length = 255)

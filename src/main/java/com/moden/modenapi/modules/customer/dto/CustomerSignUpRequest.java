@@ -1,9 +1,7 @@
 package com.moden.modenapi.modules.customer.dto;
 
-import com.moden.modenapi.common.enums.Role;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
 
@@ -13,7 +11,7 @@ import java.util.UUID;
  */
 
 public record CustomerSignUpRequest(
-        @Schema(example = "Kim Hana") @NotBlank String fullName,
+        @Schema(example = "Harry Potter") @NotBlank String fullName,
         @Schema(example = "01012345678") @NotBlank String phone
 ) {}
 
