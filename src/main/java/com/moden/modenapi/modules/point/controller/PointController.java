@@ -22,12 +22,12 @@ public class PointController {
 
     private final PointService pointService;
 
-    @Operation(summary = "Create a point record")
-    @PostMapping
-    public ResponseEntity<ResponseMessage<PointRes>> create(@RequestBody PointCreateReq req) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ResponseMessage.success("Point created successfully", pointService.create(req.paymentId())));
-    }
+//    @Operation(summary = "Create a point record")
+//    @PostMapping
+//    public ResponseEntity<ResponseMessage<PointRes>> create(@RequestBody PointCreateReq req) {
+//        return ResponseEntity.status(HttpStatus.CREATED)
+//                .body(ResponseMessage.success("Point created successfully", pointService.create(req.paymentId())));
+    //}
 
     @Operation(summary = "Get point by ID")
     @GetMapping("/{pointId}")

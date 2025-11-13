@@ -1,22 +1,22 @@
 package com.moden.modenapi.modules.studioservice.service;
 
 import com.moden.modenapi.common.service.BaseService;
+import com.moden.modenapi.modules.product.model.StudioProduct;
+import com.moden.modenapi.modules.product.repository.StudioProductRepository;
 import com.moden.modenapi.modules.studioservice.dto.*;
+import com.moden.modenapi.modules.studioservice.model.ServiceUsedProduct;
 import com.moden.modenapi.modules.studioservice.model.StudioService;
+import com.moden.modenapi.modules.studioservice.repository.ServiceUsedProductRepository;
 import com.moden.modenapi.modules.studioservice.repository.StudioServiceRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.time.DayOfWeek;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.temporal.TemporalAdjusters;
+import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -24,149 +24,151 @@ import java.util.stream.Collectors;
 public class StudioServiceService extends BaseService<StudioService> {
 
     private final StudioServiceRepository studioServiceRepository;
+    private final ServiceUsedProductRepository serviceUsedProductRepository;
+    private final StudioProductRepository studioProductRepository;
 
-    @Override
-    protected StudioServiceRepository getRepository() {
-        return studioServiceRepository;
-    }
-
-    // ----------------------------------------------------------------------
-    // 🔹 CREATE
-    // ----------------------------------------------------------------------
-    public StudioServiceRes createService(UUID studioId, StudioServiceCreateReq req) {
+    // CREATE (bitta)
+    public StudioServiceRes create(UUID studioId, StudioServiceCreateRequest req) {
         StudioService entity = StudioService.builder()
                 .studioId(studioId)
-                .designerId(req.designerId())
-                .customerId(req.customerId())
                 .serviceType(req.serviceType())
-                .reasonForVisiting(req.reasonForVisiting())
-                .reservedDate(req.reservedDate())
-                .startAt(req.startAt())
-                .endAt(req.endAt())
-                .description(req.description())
+                .afterService(req.afterService())
                 .durationMin(req.durationMin())
                 .servicePrice(req.servicePrice())
+                .designerTipPercent(req.designerTipPercent())
                 .build();
 
-        create(entity);
-        return mapToRes(entity);
+        StudioService saved = studioServiceRepository.save(entity);
+
+        // Service'da ishlatilgan productlarni saqlash
+        syncServiceProducts(saved.getId(), req.products());
+
+        List<ServiceUsedProduct> products = serviceUsedProductRepository.findByServiceId(saved.getId());
+        return toRes(saved, products);
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 UPDATE
-    // ----------------------------------------------------------------------
-    public StudioServiceRes updateService(UUID serviceId, StudioServiceUpdateReq req) {
-        StudioService entity = studioServiceRepository.findActiveById(serviceId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found"));
+    public StudioServiceRes update(UUID studioId, UUID serviceId, StudioServiceUpdateReq req) {
+        StudioService entity = studioServiceRepository.findById(serviceId)
+                .orElseThrow(() -> new IllegalArgumentException("StudioService not found: " + serviceId));
 
-        if (req.serviceType() != null) entity.setServiceType(req.serviceType());
-        if (req.reasonForVisiting() != null) entity.setReasonForVisiting(req.reasonForVisiting());
-        if (req.reservationStatus() != null) entity.setReservationStatus(req.reservationStatus());
-        if (req.reservedDate() != null) entity.setReservedDate(req.reservedDate());
-        if (req.startAt() != null) entity.setStartAt(req.startAt());
-        if (req.endAt() != null) entity.setEndAt(req.endAt());
-        if (req.description() != null) entity.setDescription(req.description());
-        if (req.durationMin() != null) entity.setDurationMin(req.durationMin());
-        if (req.servicePrice() != null) entity.setServicePrice(req.servicePrice());
+        if (!entity.getStudioId().equals(studioId)) {
+            throw new IllegalArgumentException("You do not have permission to update this service.");
+        }
 
-        entity.setUpdatedAt(Instant.now());
-        update(entity);
-        return mapToRes(entity);
+        entity.setServiceType(req.serviceType());
+        entity.setAfterService(req.afterService());
+        entity.setDurationMin(req.durationMin());
+        entity.setServicePrice(req.servicePrice());
+        entity.setDesignerTipPercent(req.designerTipPercent());
+
+        // eski productlarni tozalab, request'dan kelgan productlar bilan yangilayapti
+        syncServiceProducts(entity.getId(), req.products());
+
+        List<ServiceUsedProduct> products = serviceUsedProductRepository.findByServiceId(entity.getId());
+        return toRes(entity, products);
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 GET ONE
-    // ----------------------------------------------------------------------
+
+    // DELETE
+    public void delete(UUID studioId, UUID serviceId) {
+        StudioService entity = studioServiceRepository.findById(serviceId)
+                .orElseThrow(() -> new IllegalArgumentException("StudioService not found: " + serviceId));
+
+        if (!entity.getStudioId().equals(studioId)) {
+            throw new IllegalArgumentException("You do not have permission to delete this service.");
+        }
+
+        serviceUsedProductRepository.deleteByServiceId(serviceId);
+        studioServiceRepository.delete(entity);
+    }
+
+    // DETAIL
     @Transactional(readOnly = true)
-    public StudioServiceRes getService(UUID serviceId) {
-        StudioService entity = studioServiceRepository.findActiveById(serviceId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found"));
-        return mapToRes(entity);
+    public StudioServiceRes getOne(UUID studioId, UUID serviceId) {
+        StudioService entity = studioServiceRepository.findById(serviceId)
+                .orElseThrow(() -> new IllegalArgumentException("StudioService not found: " + serviceId));
+
+        if (!entity.getStudioId().equals(studioId)) {
+            throw new IllegalArgumentException("You do not have permission to view this service.");
+        }
+
+        List<ServiceUsedProduct> products = serviceUsedProductRepository.findByServiceId(serviceId);
+        return toRes(entity, products);
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 GET ALL BY STUDIO
-    // ----------------------------------------------------------------------
+    // LIST BY STUDIO
     @Transactional(readOnly = true)
-    public List<StudioServiceRes> getAllByStudio(UUID studioId) {
-        return studioServiceRepository.findAllActiveByStudioId(studioId)
-                .stream()
-                .map(this::mapToRes)
-                .collect(Collectors.toList());
+    public List<StudioServiceRes> listByStudio(UUID studioId) {
+        List<StudioService> services = studioServiceRepository.findByStudioId(studioId);
+
+        return services.stream()
+                .map(s -> {
+                    List<ServiceUsedProduct> products = serviceUsedProductRepository.findByServiceId(s.getId());
+                    return toRes(s, products);
+                })
+                .toList();
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 DELETE
-    // ----------------------------------------------------------------------
-    public void deleteService(UUID serviceId) {
-        StudioService entity = studioServiceRepository.findActiveById(serviceId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found"));
-        entity.setDeletedAt(Instant.now());
-        update(entity);
+    // ---- private helpers ----
+
+    private void syncServiceProducts(UUID serviceId, List<ServiceUsedProductReq> productReqs) {
+        // old productlarni tozalab tashlaymiz (simple strategy)
+        serviceUsedProductRepository.deleteByServiceId(serviceId);
+
+        if (productReqs == null || productReqs.isEmpty()) {
+            return;
+        }
+
+        for (ServiceUsedProductReq p : productReqs) {
+            BigDecimal totalPrice = p.price().multiply(BigDecimal.valueOf(p.quantity()));
+
+            ServiceUsedProduct entity = ServiceUsedProduct.builder()
+                    .serviceId(serviceId)
+                    .productId(p.productId())
+                    .quantity(p.quantity())
+                    .price(p.price())
+                    .totalPrice(totalPrice)
+                    .build();
+
+            serviceUsedProductRepository.save(entity);
+        }
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 MAPPER
-    // ----------------------------------------------------------------------
-    private StudioServiceRes mapToRes(StudioService s) {
+    private StudioServiceRes toRes(StudioService service, List<ServiceUsedProduct> products) {
+
+        List<ServiceUsedProductRes> productResList =
+                (products == null ? Collections.<ServiceUsedProduct>emptyList() : products).stream()
+                        .map(p -> {
+                            // product nomini olish (topilmasa null yoki "UNKNOWN")
+                            String productName = studioProductRepository.findById(p.getProductId())
+                                    .map(StudioProduct::getProductName)
+                                    .orElse(null);
+
+                            return new ServiceUsedProductRes(
+                                    p.getProductId(),
+                                    productName,          // ⬅️ FE tanlash/ko‘rsatish uchun nom
+                                    p.getQuantity(),
+                                    p.getPrice(),
+                                    p.getTotalPrice()
+                            );
+                        })
+                        .toList();
+
         return new StudioServiceRes(
-                s.getId(),
-                s.getStudioId(),
-                s.getDesignerId(),
-                s.getCustomerId(),
-                s.getServiceType(),
-                s.getReservationStatus(),
-                s.getReasonForVisiting(),
-                s.getReservedDate(),
-                s.getStartAt(),
-                s.getEndAt(),
-                s.getDescription(),
-                s.getDurationMin(),
-                s.getServicePrice(),
-                s.getCreatedAt(),
-                s.getUpdatedAt()
+                service.getId(),
+                service.getStudioId(),
+                service.getServiceType(),
+                service.getAfterService(),
+                service.getDurationMin(),
+                service.getServicePrice(),
+                service.getDesignerTipPercent(),
+                productResList,
+                service.getCreatedAt(),
+                service.getUpdatedAt()
         );
     }
-
-
-// 🔹 GET DAILY
-// ----------------------------------------------------------------------
-    @Transactional(readOnly = true)
-    public List<StudioServiceRes> getDailyServices(UUID studioId, LocalDate date) {
-        List<StudioService> list = studioServiceRepository.findAllByStudioIdAndDate(studioId, date);
-        return list.stream().map(this::mapToRes).collect(Collectors.toList());
+    @Override
+    protected JpaRepository<StudioService, UUID> getRepository() {
+        return null;
     }
-
-    // ----------------------------------------------------------------------
-// 🔹 GET WEEKLY
-// ----------------------------------------------------------------------
-    @Transactional(readOnly = true)
-    public List<StudioServiceRes> getWeeklyServices(UUID studioId, LocalDate dateInWeek) {
-        LocalDate startOfWeek = dateInWeek.with(DayOfWeek.MONDAY);
-        LocalDate endOfWeek = dateInWeek.with(DayOfWeek.SUNDAY);
-        List<StudioService> list = studioServiceRepository.findAllByStudioIdAndDateRange(studioId, startOfWeek, endOfWeek);
-        return list.stream().map(this::mapToRes).collect(Collectors.toList());
-    }
-
-    // ----------------------------------------------------------------------
-// 🔹 GET MONTHLY
-// ----------------------------------------------------------------------
-    @Transactional(readOnly = true)
-    public List<StudioServiceRes> getMonthlyServices(UUID studioId, int year, int month) {
-        LocalDate start = LocalDate.of(year, month, 1);
-        LocalDate end = start.with(TemporalAdjusters.lastDayOfMonth());
-        List<StudioService> list = studioServiceRepository.findAllByStudioIdAndDateRange(studioId, start, end);
-        return list.stream().map(this::mapToRes).collect(Collectors.toList());
-    }
-
-    // ----------------------------------------------------------------------
-// 🔹 GET BETWEEN DATES
-// ----------------------------------------------------------------------
-    @Transactional(readOnly = true)
-    public List<StudioServiceRes> getServicesBetween(UUID studioId, LocalDate startDate, LocalDate endDate) {
-        List<StudioService> list = studioServiceRepository.findAllByStudioIdAndDateRange(studioId, startDate, endDate);
-        return list.stream().map(this::mapToRes).collect(Collectors.toList());
-    }
-
-
 }

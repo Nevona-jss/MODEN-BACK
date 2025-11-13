@@ -11,6 +11,7 @@ import java.util.UUID;
 @Repository
 public interface StudioProductRepository extends BaseRepository<StudioProduct, UUID> {
 
+    List<StudioProduct> findByStudioId(UUID studioId);
     List<StudioProduct> findAllByStudioIdAndDeletedAtIsNullOrderByProductNameAsc(UUID studioId);
     // 단건(삭제되지 않은 것만)
     Optional<StudioProduct> findByIdAndDeletedAtIsNull(UUID id);

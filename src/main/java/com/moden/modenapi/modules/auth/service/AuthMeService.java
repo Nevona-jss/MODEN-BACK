@@ -66,19 +66,29 @@ public class AuthMeService {
                 var d = base.designer;
                 if (d == null) return buildAdminLikeBase(base);
                 var u = base.user;
+
+                // 안전하게 effective role 계산 (u.getRole() 없으면 DESIGNER로 fallback)
+                Role effectiveRole = (u != null && u.getRole() != null)
+                        ? u.getRole()
+                        : Role.DESIGNER;
+
                 return new DesignerResponse(
-                        d.getId(),
-                        d.getUserId(),
-                        d.getHairStudioId(),
-                        d.getIdForLogin(),
-                        u != null ? Role.valueOf(u.getPhone()) : null,
-                        u != null ? String.valueOf(u.getRole()) : null,
-                        d.getBio(),
-                        Collections.emptyList(), // 필요 시 포트폴리오 채우기
-                        d.getCreatedAt(),
-                        d.getUpdatedAt()
+                        d.getId(),                // id
+                        d.getUserId(),            // userId
+                        d.getHairStudioId(),      // studioId
+                        d.getIdForLogin(),        // idForLogin
+
+                        effectiveRole,            // ✅ role (Role enum)
+                        u != null ? u.getPhone() : null,  // ✅ phone (String)
+                        d.getPosition(),          // position
+
+                        d.getBio(),               // bio
+                        Collections.emptyList(),  // portfolio
+                        d.getCreatedAt(),         // createdAt
+                        d.getUpdatedAt()          // updatedAt
                 );
             }
+
             case "CUSTOMER" -> {
                 var c = base.customer;
                 if (c == null) return buildAdminLikeBase(base);

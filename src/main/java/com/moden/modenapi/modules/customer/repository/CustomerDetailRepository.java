@@ -15,6 +15,34 @@ import java.util.UUID;
 public interface CustomerDetailRepository extends BaseRepository<CustomerDetail, UUID> {
 
 
+    /**
+     * Bugun tug'ilgan kuni bo'lgan barcha customerlar (studioId 상관없이)
+     */
+    @Query("""
+        select c
+        from CustomerDetail c
+        where c.deletedAt is null
+          and function('month', c.birthdate) = :month
+          and function('day',   c.birthdate) = :day
+    """)
+    List<CustomerDetail> findAllByBirthday(
+            @Param("month") int month,
+            @Param("day") int day
+    );
+
+    @Query("""
+        select c
+        from CustomerDetail c
+        where c.studioId = :studioId
+          and c.deletedAt is null
+          and function('month', c.birthdate) = :month
+          and function('day',   c.birthdate) = :day
+    """)
+    List<CustomerDetail> findBirthdayCustomersOnDate(
+            @Param("studioId") UUID studioId,
+            @Param("month") int month,
+            @Param("day") int day
+    );
     @Query("select c from CustomerDetail c where c.userId = :userId and c.deletedAt is null")
     Optional<CustomerDetail> findActiveByUserId(@Param("userId") UUID userId);
 

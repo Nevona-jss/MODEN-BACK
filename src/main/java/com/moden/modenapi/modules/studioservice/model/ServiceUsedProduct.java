@@ -32,7 +32,7 @@ public class ServiceUsedProduct extends BaseEntity {
     @Column(nullable = false)
     private int quantity;  // Miqdor
 
-    @Column(precision = 10, scale = 7)
+    @Column(precision = 12, scale = 7)
     private BigDecimal price;  // Mahsulot narxi
 
     @Column(nullable = false, precision = 12, scale = 2)

@@ -25,18 +25,17 @@ public class Coupon extends BaseEntity {
     private UUID userId;
 
     @Column(nullable = false, length = 100)
-    private String name;   // e.g. "Birthday 10% Discount Coupon"
+    private String name;
 
-    @Column(name = "discount_rate", precision = 5, scale = 2)
+    @Column(name = "discount_rate")
     private BigDecimal discountRate;
 
-    @Column(name = "discount_amount", precision = 12, scale = 2)
+    @Column(name = "discount_amount")
     private BigDecimal discountAmount;
-
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private CouponStatus status = CouponStatus.AVAILABLE; // AVAILABLE, USED, EXPIRED
+    private CouponStatus status = CouponStatus.AVAILABLE;
 
     @Column(name = "start_date")
     private LocalDate startDate;
@@ -49,4 +48,8 @@ public class Coupon extends BaseEntity {
 
     @Column(name = "is_first_visit_coupon")
     private boolean firstVisitCoupon = false;
+
+    // 🔴 global/personal flag
+    @Column(name = "is_global", nullable = false)
+    private boolean isGlobal = true; // default: global, personal bo'lsa false qilib qo'yamiz
 }

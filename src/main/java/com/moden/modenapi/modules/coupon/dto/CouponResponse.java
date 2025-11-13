@@ -1,5 +1,6 @@
 package com.moden.modenapi.modules.coupon.dto;
 
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.moden.modenapi.common.enums.CouponStatus;
 import java.math.BigDecimal;

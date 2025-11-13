@@ -8,6 +8,7 @@ import com.moden.modenapi.modules.auth.service.AuthLocalService;
 import com.moden.modenapi.modules.coupon.dto.CouponCreateRequest;
 import com.moden.modenapi.modules.coupon.dto.CouponResponse;
 import com.moden.modenapi.modules.coupon.service.CouponService;
+import com.moden.modenapi.modules.coupon.service.CustomerCouponService;
 import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
 import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
@@ -41,17 +42,16 @@ public class CustomerService extends BaseService<CustomerDetail> {
     private final AuthLocalService authLocalService;
     private final DesignerDetailRepository designerDetailRepository;
     private final CouponService couponService;
+    private final CustomerCouponService customerCouponService;
 
-
-    // CustomerService.java (parcha)
     @Transactional
     public void customerRegister(CustomerSignUpRequest req, String rawPassword) {
-        // 0) telefon unikal
+        // 0) phone unique check
         userRepo.findByPhone(req.phone()).ifPresent(u -> {
             throw new IllegalArgumentException("User already registered with this phone number.");
         });
 
-        // 1) User
+        // 1) Create User
         User user = User.builder()
                 .fullName(req.fullName())
                 .phone(req.phone())
@@ -60,48 +60,55 @@ public class CustomerService extends BaseService<CustomerDetail> {
         userRepo.save(user);
         authLocalService.createOrUpdatePassword(user.getId(), rawPassword);
 
-        // 2) Studio (request'dagi studioId e'tiborga olinmaydi!)
-        UUID studioId = resolveStudioIdForCurrentActor(null);  // ❗ doim avtomatik
+        // 2) Resolve studio for current actor (studioId from logged-in studio)
+        UUID studioId = resolveStudioIdForCurrentActor(null);
 
-        // 3) Designer (request'dagi designerId e'tiborga olinmaydi!)
-        UUID assignedDesignerId = resolveDesignerForAssignment(null, studioId); // ❗ doim avtomatik
+        // 3) Resolve designer (optional)
+        UUID assignedDesignerId = resolveDesignerForAssignment(null, studioId);
 
-        // 4) CustomerDetail
-        // ...
-
-// 4) CustomerDetail
+        // 4) Create CustomerDetail
         CustomerDetail cd = CustomerDetail.builder()
                 .userId(user.getId())
                 .studioId(studioId)
-                .designerId(assignedDesignerId)  // null bo‘lishi mumkin
+                .designerId(assignedDesignerId)
                 .email(null)
                 .consentMarketing(false)
                 .notificationEnabled(false)
                 .build();
-
         customerRepo.save(cd);
 
-// 5) ✅ Ro'yxatdan o'tishda birinchi tashrif kuponi (10%, 7 kun)
-//    - Kuponda studioId va userId majburiy ravishda beriladi
+        // 5) First-visit coupon (personal, isGlobal = false)
         CouponCreateRequest firstVisitReq = new CouponCreateRequest(
-                studioId,                 // ✅ kupon.studioId
-                user.getId(),             // ✅ kupon.userId
+                studioId,                      // studioId
+                user.getId(),                  // userId (policy side, as you designed)
                 "💈 First Visit — 10% discount",
-                BigDecimal.valueOf(10.0), // discountRate (exclusivity: amount=null)
-                null,                     // discountAmount
-                LocalDate.now(),          // startDate = bugun
-                LocalDate.now().plusDays(30), // expiryDate = 30 kun
-                false,                    // birthdayCoupon
-                true                      // firstVisitCoupon
+                BigDecimal.valueOf(10.0),      // discountRate
+                null,                          // discountAmount
+                LocalDate.now(),               // startDate = today
+                LocalDate.now().plusDays(30),  // expiryDate = 30 days
+                false,                         // birthdayCoupon
+                true,                          // firstVisitCoupon
+                false                          // isGlobal = false  ✅ personal coupon
         );
 
-// Kupon yaratish va ID sini olish
+        // Create coupon policy
         CouponResponse createdCoupon = couponService.create(firstVisitReq);
 
-// CustomerDetail.ga kupon ID sini yozib qo‘yish
+        // 6) Insert into customer_coupon (status = AVAILABLE)
+        //    customerId = CustomerDetail.id (business customer)
+        customerCouponService.assignToCustomer(
+                studioId,
+                createdCoupon.id(),   // coupon_id
+                cd.getId()            // customer_id
+        );
+
+        // 7) (optional) also store coupon id in CustomerDetail
         cd.setFirstVisitCouponId(createdCoupon.id());
         customerRepo.save(cd);
     }
+
+
+
 
     /* ================= Helpers ================= */
 

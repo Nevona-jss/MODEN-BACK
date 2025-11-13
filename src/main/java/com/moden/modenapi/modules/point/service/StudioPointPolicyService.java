@@ -59,14 +59,14 @@ public class StudioPointPolicyService extends BaseService<StudioPointPolicy> {
     // ----------------------------------------------------------------------
     // 🔹 Get policy by service ID (returns ENTITY)
     // ----------------------------------------------------------------------
-    @Transactional(readOnly = true)
-    public StudioPointPolicy getPolicyByService(UUID serviceId) {
-        StudioService service = studioServiceRepository.findByIdAndDeletedAtIsNull(serviceId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found"));
-
-        return repository.findByStudioIdAndDeletedAtIsNull(service.getStudioId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Point policy not found"));
-    }
+//    @Transactional(readOnly = true)
+//    public StudioPointPolicy getPolicyByService(UUID serviceId) {
+//        StudioService service = studioServiceRepository.findByIdAndDeletedAtIsNull(serviceId)
+//                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Service not found"));
+//
+//        return repository.findByStudioIdAndDeletedAtIsNull(service.getStudioId())
+//                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Point policy not found"));
+//    }
 
     // ----------------------------------------------------------------------
     // 🔹 Mapper

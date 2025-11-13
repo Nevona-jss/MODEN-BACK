@@ -8,13 +8,13 @@ import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.util.List;
 
-@Schema(description = "Request DTO for creating/updating a studio service")
-public record StudioServiceUpdateReq(
+@Schema(description = "Request DTO for creating a studio service")
+public record StudioServiceCreateRequest(
 
         @NotNull
         @Schema(
                 description = "Service type",
-                example = "CUT", // ⚠️ enum bilan mos bo'lishi kerak
+                example = "CUT",
                 allowableValues = {"PERM", "CARE", "CUT", "COLOR"}
         )
         ServiceType serviceType,

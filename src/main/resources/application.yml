@@ -39,6 +39,8 @@ springdoc:
     enabled: true
     path: /v3/api-docs
   swagger-ui:
+    tagsSorter: alpha         # Tag’larni A–Z bo‘yicha tartiblaydi
+    operationsSorter: alpha
     enabled: true
     path: /docs
     operations-sorter: method

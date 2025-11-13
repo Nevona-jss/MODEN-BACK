@@ -39,42 +39,42 @@ public class PointService extends BaseService<Point> {
     // ----------------------------------------------------------------------
     // 🔹 Auto create after successful payment
     // ----------------------------------------------------------------------
-    public PointRes create(UUID paymentId) {
-        // ✅ fetch payment
-        Payment payment = paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found"));
-
-        UUID serviceId = payment.getServiceId();
-        if (serviceId == null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment has no linked service");
-
-        // ✅ fetch studio’s cashback policy
-        StudioPointPolicy policy = studioPointPolicyService.getPolicyByService(serviceId);
-        if (policy == null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No cashback policy found for this studio");
-
-        BigDecimal rate = policy.getPointRate();
-        if (rate == null || rate.compareTo(BigDecimal.ZERO) <= 0)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio’s point rate must be greater than 0");
-
-        // ✅ calculate earned points
-        BigDecimal earnedPoints = payment.getAmount()
-                .multiply(rate)
-                .divide(BigDecimal.valueOf(100));
-
-        if (earnedPoints.compareTo(BigDecimal.ZERO) <= 0)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Calculated points must be greater than zero");
-
-        // ✅ save new point record
-        Point p = Point.builder()
-                .paymentId(paymentId)
-                .type(PointType.EARNED)
-                .amount(earnedPoints)
-                .build();
-
-        create(p);
-        return toRes(p);
-    }
+//    public PointRes create(UUID paymentId) {
+//        // ✅ fetch payment
+//        Payment payment = paymentRepository.findById(paymentId)
+//                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found"));
+//
+//        UUID serviceId = payment.getServiceId();
+//        if (serviceId == null)
+//            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment has no linked service");
+//
+//        // ✅ fetch studio’s cashback policy
+//        StudioPointPolicy policy = studioPointPolicyService.getPolicyByService(serviceId);
+//        if (policy == null)
+//            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No cashback policy found for this studio");
+//
+//        BigDecimal rate = policy.getPointRate();
+//        if (rate == null || rate.compareTo(BigDecimal.ZERO) <= 0)
+//            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio’s point rate must be greater than 0");
+//
+//        // ✅ calculate earned points
+//        BigDecimal earnedPoints = payment.getAmount()
+//                .multiply(rate)
+//                .divide(BigDecimal.valueOf(100));
+//
+//        if (earnedPoints.compareTo(BigDecimal.ZERO) <= 0)
+//            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Calculated points must be greater than zero");
+//
+//        // ✅ save new point record
+//        Point p = Point.builder()
+//                .paymentId(paymentId)
+//                .type(PointType.EARNED)
+//                .amount(earnedPoints)
+//                .build();
+//
+//        create(p);
+//        return toRes(p);
+//    }
 
     // ----------------------------------------------------------------------
     // 🔹 READ

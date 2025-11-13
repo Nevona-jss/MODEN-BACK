@@ -6,17 +6,15 @@ import com.moden.modenapi.modules.coupon.dto.CouponResponse;
 import com.moden.modenapi.modules.coupon.dto.CouponUpdateRequest;
 import com.moden.modenapi.modules.coupon.model.Coupon;
 import com.moden.modenapi.modules.coupon.repository.CouponRepository;
-import com.moden.modenapi.modules.customer.model.CustomerDetail;
-import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
+import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -27,15 +25,14 @@ import java.util.UUID;
 public class CouponService {
 
     private final CouponRepository couponRepository;
-    private final HairStudioDetailRepository studioDetailRepository;
-    private final CustomerDetailRepository customerDetailRepository;
+    private final HairStudioDetailRepository hairStudioDetailRepository;
 
     // --------------------------
-    // CREATE
+    // CREATE  (faqat policy)
     // --------------------------
     public CouponResponse create(CouponCreateRequest req) {
-        if (req.userId() == null || req.studioId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "studioId va userId majburiy");
+        if (req.studioId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "studioId majburiy");
         }
 
         boolean hasRate   = req.discountRate()   != null && req.discountRate().signum() > 0;
@@ -50,7 +47,7 @@ public class CouponService {
                     "discountRate yoki discountAmount dan bittasi majburiy");
         }
 
-        LocalDate start = req.startDate() != null ? req.startDate() : LocalDate.now();
+        LocalDate start = (req.startDate() != null) ? req.startDate() : LocalDate.now();
         LocalDate end   = req.expiryDate();
         if (end != null && end.isBefore(start)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -68,65 +65,110 @@ public class CouponService {
                 .birthdayCoupon(req.birthdayCoupon())
                 .firstVisitCoupon(req.firstVisitCoupon())
                 .status(CouponStatus.AVAILABLE)
+                .isGlobal(req.isGlobal())
                 .build();
 
-        Coupon saved = couponRepository.save(c);
-        return toRes(saved);
+
+        return toRes(couponRepository.save(c));
     }
 
     // --------------------------
-    // UPDATE (qisman)
+    // UPDATE (qisman policy)
     // --------------------------
+    @Transactional
     public CouponResponse update(UUID id, CouponUpdateRequest req) {
-        Coupon e = couponRepository.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Kupon topilmadi"));
 
-        if (req.discountRate() != null && req.discountAmount() != null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "discountRate va discountAmount dan faqat bittasini yangilang");
+        // 1) Avval DB dan kuponni olib kelamiz (faqat o‘chirilmagan bo‘lsa)
+        Coupon entity = couponRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() ->
+                        new ResponseStatusException(HttpStatus.NOT_FOUND, "Kupon topilmadi")
+                );
+
+        // 2) Chegirma miqdori bo‘yicha validatsiya
+        boolean wantsRateUpdate   = (req.discountRate()   != null);
+        boolean wantsAmountUpdate = (req.discountAmount() != null);
+
+        // Ikkalasini ham bir vaqtning o‘zida yangilashga ruxsat bermaymiz
+        if (wantsRateUpdate && wantsAmountUpdate) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "discountRate va discountAmount dan faqat bittasini yangilang"
+            );
         }
 
-        if (req.name() != null) e.setName(req.name());
-        if (req.discountRate() != null) {
-            if (req.discountRate().signum() <= 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "discountRate > 0 bo‘lishi kerak");
-            e.setDiscountRate(req.discountRate());
-            e.setDiscountAmount(null);
+        // 3) Oddiy field’larni patch qilish (null bo‘lmaganlarini)
+        if (req.name() != null) {
+            entity.setName(req.name());
         }
-        if (req.discountAmount() != null) {
-            if (req.discountAmount().signum() <= 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "discountAmount > 0 bo‘lishi kerak");
-            e.setDiscountAmount(req.discountAmount());
-            e.setDiscountRate(null);
-        }
-        if (req.startDate() != null) e.setStartDate(req.startDate());
-        if (req.expiryDate() != null) e.setExpiryDate(req.expiryDate());
-        if (req.status() != null) e.setStatus(req.status());
-        if (req.birthdayCoupon() != null) e.setBirthdayCoupon(req.birthdayCoupon());
-        if (req.firstVisitCoupon() != null) e.setFirstVisitCoupon(req.firstVisitCoupon());
 
-        LocalDate start = e.getStartDate() != null ? e.getStartDate() : LocalDate.now();
-        LocalDate end   = e.getExpiryDate();
+        // 4) discountRate yangilanayotgan bo‘lsa
+        if (wantsRateUpdate) {
+            if (req.discountRate().signum() <= 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "discountRate > 0 bo‘lishi kerak"
+                );
+            }
+            entity.setDiscountRate(req.discountRate());
+            entity.setDiscountAmount(null);  // rate ishlatsa, amount ni tozalaymiz
+        }
+
+        // 5) discountAmount yangilanayotgan bo‘lsa
+        if (wantsAmountUpdate) {
+            if (req.discountAmount().signum() <= 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "discountAmount > 0 bo‘lishi kerak"
+                );
+            }
+            entity.setDiscountAmount(req.discountAmount());
+            entity.setDiscountRate(null);    // amount ishlatsa, rate ni tozalaymiz
+        }
+
+        // 6) Sana, status, flag’lar (null bo‘lmasa yangilaymiz)
+        if (req.startDate() != null) {
+            entity.setStartDate(req.startDate());
+        }
+        if (req.expiryDate() != null) {
+            entity.setExpiryDate(req.expiryDate());
+        }
+        if (req.status() != null) {
+            entity.setStatus(req.status());
+        }
+        if (req.birthdayCoupon() != null) {
+            entity.setBirthdayCoupon(req.birthdayCoupon());
+        }
+        if (req.firstVisitCoupon() != null) {
+            entity.setFirstVisitCoupon(req.firstVisitCoupon());
+        }
+        // agar CouponUpdateRequest da isGlobal ham bo‘lsa:
+        // if (req.isGlobal() != null) {
+        //     entity.setGlobal(req.isGlobal());
+        // }
+
+        // 7) Sana mantiqiyligini tekshiramiz
+        LocalDate start = (entity.getStartDate() != null)
+                ? entity.getStartDate()
+                : LocalDate.now();    // startDate null bo‘lsa, bugungi sana sifatida qabul qilamiz
+
+        LocalDate end = entity.getExpiryDate();
         if (end != null && end.isBefore(start)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "tugash sanasi boshlanish sanasidan oldin bo‘la olmaydi");
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "tugash sanasi boshlanish sanasidan oldin bo‘la olmaydi"
+            );
         }
 
-        Coupon saved = couponRepository.save(e);
+        // 8) DB ga saqlaymiz va eng oxirgi holatini qaytaramiz
+        Coupon saved = couponRepository.save(entity);
+
+        // 9) DTO ga map qilib, Controllerga yuboramiz
         return toRes(saved);
     }
 
-    // --------------------------
-    // MARK AS USED
-    // --------------------------
-    public CouponResponse markAsUsed(UUID id) {
-        Coupon c = couponRepository.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Kupon topilmadi"));
-        c.setStatus(CouponStatus.USED);
-        Coupon saved = couponRepository.save(c);
-        return toRes(saved);
-    }
 
     // --------------------------
-    // GET ONE
+    // GET ONE (policy)
     // --------------------------
     @Transactional(readOnly = true)
     public CouponResponse get(UUID id) {
@@ -136,106 +178,73 @@ public class CouponService {
     }
 
     // --------------------------
-    // LIST BY USER / STATUS
+    // LIST BY STUDIO / STATUS (policy)
     // --------------------------
-    @Transactional(readOnly = true)
-    public List<CouponResponse> listByUser(UUID userId) {
-        return couponRepository.findAllByUserIdAndDeletedAtIsNull(userId)
-                .stream().map(this::toRes).toList();
-    }
 
     @Transactional(readOnly = true)
-    public List<CouponResponse> listByUserAndStatus(UUID userId, CouponStatus status) {
-        List<Coupon> list = (status != null)
-                ? couponRepository.findAllByUserIdAndStatusAndDeletedAtIsNull(userId, status)
-                : couponRepository.findAllByUserIdAndDeletedAtIsNull(userId);
-        return list.stream().map(this::toRes).toList();
-    }
+    public List<CouponResponse> listByStudioForCurrentUser(UUID userId) {
+        // 1) 먼저 userId → studioId 찾기
+        var page1 = PageRequest.of(0, 1);
+        var studioOpt = hairStudioDetailRepository
+                .findActiveByUserIdOrderByUpdatedDesc(userId, page1)
+                .stream()
+                .findFirst();
 
-    // --------------------------
-    // LIST BY STUDIO / STATUS
-    // --------------------------
-    @Transactional(readOnly = true)
-    public List<CouponResponse> listByStudio(UUID studioId) {
+        if (studioOpt.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio profili topilmadi");
+        }
+
+        HairStudioDetail studio = studioOpt.get();
+        UUID studioId = studio.getId();  // ✅ 쿠폰의 studioId랑 같은 값
+
+        // 2) 해당 studioId 기준으로 쿠폰 조회 (정렬도 추가하고 싶으면 OrderBy...)
         return couponRepository.findAllByStudioIdAndDeletedAtIsNull(studioId)
-                .stream().map(this::toRes).toList();
+                .stream()
+                .map(this::toRes)
+                .toList();
     }
 
+    // 공통: userId → studioId 변환
+    private UUID resolveStudioIdForUser(UUID userId) {
+        var page1 = PageRequest.of(0, 1);
+
+        var studioOpt = hairStudioDetailRepository
+                .findActiveByUserIdOrderByUpdatedDesc(userId, page1)
+                .stream()
+                .findFirst();
+
+        if (studioOpt.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Studio profili topilmadi");
+        }
+
+        HairStudioDetail studio = studioOpt.get();
+        return studio.getId();  // 👉 bu Coupon.studioId bilan bir xil bo‘lishi kerak
+    }
+
+    // --------------------------
+    // LIST BY STUDIO + STATUS (userId asosida)
+    // --------------------------
     @Transactional(readOnly = true)
-    public List<CouponResponse> listByStudioAndStatus(UUID studioId, CouponStatus status) {
+    public List<CouponResponse> listByStudioAndStatusForCurrentUser(UUID userId, CouponStatus status) {
+        UUID studioId = resolveStudioIdForUser(userId);  // userId → studioId
+
         List<Coupon> list = (status != null)
                 ? couponRepository.findAllByStudioIdAndStatusAndDeletedAtIsNull(studioId, status)
                 : couponRepository.findAllByStudioIdAndDeletedAtIsNull(studioId);
-        return list.stream().map(this::toRes).toList();
-    }
-    // ---------------------------------------------------------
-    // 🎂  A) Bitta STUDIO uchun bugungi tug‘ilgan mijozlarga kupon berish
-    // ---------------------------------------------------------
-    public void issueBirthdayCouponsForStudio(UUID studioId) {
-        LocalDate today = LocalDate.now();
 
-        List<CustomerDetail> birthdays =
-                studioDetailRepository.findBirthdayCustomersToday(studioId, today.getMonthValue(), today.getDayOfMonth());
-        if (birthdays.isEmpty()) return;
-
-        for (CustomerDetail cd : birthdays) {
-            UUID userId = cd.getUserId();
-
-            boolean hasActiveBirthday = couponRepository.findAllByUserIdAndDeletedAtIsNull(userId)
-                    .stream()
-                    .anyMatch(c -> c.isBirthdayCoupon()
-                            && studioId.equals(c.getStudioId())
-                            && c.getStatus() == CouponStatus.AVAILABLE
-                            && c.getExpiryDate() != null
-                            && !c.getExpiryDate().isBefore(today));
-
-            if (hasActiveBirthday) continue;
-
-            CouponCreateRequest req = new CouponCreateRequest(
-                    studioId,
-                    userId,
-                    "🎂 Tug‘ilgan kun — 30% chegirma",
-                    BigDecimal.valueOf(30.0),
-                    null,
-                    today,
-                    today.plusDays(30),
-                    true,   // birthdayCoupon
-                    false   // firstVisitCoupon
-            );
-
-            // ✅ Kupon yaratamiz va id ni olamiz
-            CouponResponse created = create(req);
-
-            // ✅ CustomerDetail.last_birthday_coupon_id ga yozamiz
-            customerDetailRepository.findByUserId(userId).ifPresent(cust -> {
-                cust.setLastBirthdayCouponId(created.id());
-                customerDetailRepository.save(cust);
-            });
-            // (xohlasangiz, else’da warning/exception tashlashingiz mumkin)
-        }
-    }
-
-
-    // ---------------------------------------------------------
-    // 🎂  B) Barcha STUDIO lar uchun har kuni 00:05 da avtomatik
-    // ---------------------------------------------------------
-    @Scheduled(cron = "0 5 0 * * ?")
-    public void scheduledIssueBirthdayCouponsForAllStudios() {
-        List<UUID> studioIds = studioDetailRepository.findActiveStudioIds();
-        for (UUID studioId : studioIds) {
-            issueBirthdayCouponsForStudio(studioId);
-        }
+        return list.stream()
+                .map(this::toRes)
+                .toList();
     }
 
     // --------------------------
-    // (quyida mapping/helper metodlari va boshqalar)
+    // MAPPER
     // --------------------------
-
     private CouponResponse toRes(Coupon c) {
         return new CouponResponse(
                 c.getId(),
                 c.getStudioId(),
-                c.getUserId(),
+                null,                // 🔴 userId endi yo‘q → null qaytaramiz (DTO’ni keyin customerId ga moslab alohida tuzishingiz mumkin)
                 c.getName(),
                 c.getDiscountRate(),
                 c.getDiscountAmount(),
@@ -246,39 +255,6 @@ public class CouponService {
                 c.getUpdatedAt(),
                 c.isBirthdayCoupon(),
                 c.isFirstVisitCoupon()
-        );
-    }
-
-    public void issueFirstVisitCoupon(UUID studioId, UUID userId) {
-        if (studioId == null || userId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "studioId and userId are required");
-        }
-
-        LocalDate today = LocalDate.now();
-
-        boolean hasActive = couponRepository.findAllByUserIdAndDeletedAtIsNull(userId)
-                .stream()
-                .anyMatch(c -> c.isFirstVisitCoupon()
-                        && studioId.equals(c.getStudioId())
-                        && c.getStatus() == CouponStatus.AVAILABLE
-                        && c.getExpiryDate() != null
-                        && !c.getExpiryDate().isBefore(today));
-
-        if (hasActive) {
-            return; // allaqachon bor — hech narsa qilmaymiz
-        }
-
-        // create() validatsiyalariga mos bo'lishi uchun create-request tuzamiz
-        CouponCreateRequest req = new CouponCreateRequest(
-                studioId,
-                userId,
-                "💈 First Visit — 10% discount",
-                BigDecimal.valueOf(10.0), // discountRate
-                null,                      // discountAmount = null (exclusivity)
-                today,                     // startDate
-                today.plusDays(7),         // expiryDate
-                false,                     // birthdayCoupon
-                true                       // firstVisitCoupon
         );
     }
 }

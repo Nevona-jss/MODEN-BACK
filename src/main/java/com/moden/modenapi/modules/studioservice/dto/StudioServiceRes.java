@@ -1,29 +1,42 @@
 package com.moden.modenapi.modules.studioservice.dto;
 
-import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.enums.ServiceType;
 import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
-@Schema(description = "Response DTO for studio service reservation details")
+@Schema(description = "Studio service detail (with used products)")
 public record StudioServiceRes(
+
+        @Schema(description = "Service ID")
         UUID id,
+
+        @Schema(description = "Studio ID")
         UUID studioId,
-        UUID designerId,
-        UUID customerId,
+
+        @Schema(description = "Service type")
         ServiceType serviceType,
-        ReservationStatus reservationStatus,
-        String reasonForVisiting,
-        LocalDate reservedDate,
-        LocalDateTime startAt,
-        LocalDateTime endAt,
-        String description,
+
+        @Schema(description = "After service memo")
+        String afterService,
+
+        @Schema(description = "Duration (min)")
         int durationMin,
+
+        @Schema(description = "Service price")
         BigDecimal servicePrice,
-        Instant createdAt,
-        Instant updatedAt
+
+        @Schema(description = "Designer tip percent")
+        BigDecimal designerTipPercent,
+
+        @Schema(description = "Products used in this service")
+        List<ServiceUsedProductRes> products,
+
+        @Schema(description = "Created at")
+        java.time.Instant createdAt,
+
+        @Schema(description = "Updated at")
+        java.time.Instant updatedAt
 ) {}

@@ -145,6 +145,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
                 d.getIdForLogin(),
                 user.getRole(),          // Role.DESIGNER
                 user.getPhone(),
+                d.getPosition(),
                 d.getBio(),
                 portfolio,
                 d.getCreatedAt(),
@@ -267,6 +268,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
                 d.getIdForLogin(),
                 user != null ? Role.valueOf(user.getPhone()) : null,
                 user != null ? String.valueOf(user.getRole()) : null,
+                d.getPosition(),
                 d.getBio(),
                 items,
                 d.getCreatedAt(),

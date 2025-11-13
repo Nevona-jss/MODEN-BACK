@@ -21,5 +21,7 @@ public record CouponCreateRequest(
         LocalDate expiryDate,
 
         boolean birthdayCoupon,
-        boolean firstVisitCoupon
+        boolean firstVisitCoupon,
+
+        boolean isGlobal
 ) {}

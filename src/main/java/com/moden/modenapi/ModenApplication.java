@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @OpenAPIDefinition(
         info = @Info(title = "MODEN Hair Platform API", version = "1.0", description = "Backend API Documentation")
@@ -16,6 +17,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 @EnableConfigurationProperties(JwtProperties.class)
 @ConfigurationPropertiesScan
 @SpringBootApplication
+@EnableScheduling
 public class ModenApplication {
 
     public static void main(String[] args) {
