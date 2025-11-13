@@ -1,13 +1,15 @@
 server:
-  port: ${PORT:8080}
+  address: 0.0.0.0
+  port: ${PORT:8080}          # Default local port = 8080, serverda --server.port=5003 bilan override qilinadi
   servlet:
     context-path: /
 
 spring:
-  config:
-    import: optional:classpath:application-secret.yml
   application:
     name: moden-api
+
+  config:
+    import: optional:classpath:application-secret.yml
 
   datasource:
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
@@ -31,6 +33,7 @@ spring:
       max-file-size: 20MB
       max-request-size: 20MB
 
+# ✅ Swagger konfiguratsiyasi (springdoc)
 springdoc:
   api-docs:
     enabled: true
@@ -43,6 +46,7 @@ springdoc:
   paths-to-match: /**
   default-produces-media-type: application/json
 
+# ✅ Log sozlamalari
 logging:
   level:
     root: INFO
@@ -53,19 +57,31 @@ logging:
     ansi:
       enabled: ALWAYS
 
+# ✅ Fayl yuklash (localda va serverda)
 file:
+  # Local (Windows/Linux)
   upload-dir: /home/hyona/IdeaProjects/MODEN/uploads
+  # Serverda avtomatik ravishda port bilan to‘liq URL hosil qiladi
   base-url: http://localhost:${server.port}/uploads
 
+# ✅ JWT konfiguratsiyasi
 app:
   jwt:
     secret: ${JWT_SECRET}
-    access-expiration-ms: 86400000
-    refresh-expiration-ms: 2592000000
+    access-expiration-ms: 86400000       # 1 kun
+    refresh-expiration-ms: 2592000000    # 30 kun
 
-
-# ========== FIREBASE CONFIG (works both locally & on Render) ==========
-
+# ✅ Firebase sozlamalari (Render yoki serverda environment orqali o‘qiladi)
 firebase:
   credentials:
-    base64: ${FIREBASE_SA_BASE64:}   # Render/Env orqali credential o‘qiladi
+    base64: ${FIREBASE_SA_BASE64:}
+
+# ✅ Qo‘shimcha: CORS uchun server domainlar
+cors:
+  allowed-origins:
+    - "http://localhost:5173"
+    - "http://127.0.0.1:5173"
+    - "http://localhost:8080"
+    - "http://127.0.0.1:8080"
+    - "http://122.37.246.79:7005"
+    - "https://122.37.246.79:7005"

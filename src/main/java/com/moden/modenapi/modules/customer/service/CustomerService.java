@@ -5,11 +5,15 @@ import com.moden.modenapi.common.service.BaseService;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.modules.auth.service.AuthLocalService;
+import com.moden.modenapi.modules.coupon.dto.CouponCreateRequest;
+import com.moden.modenapi.modules.coupon.dto.CouponResponse;
+import com.moden.modenapi.modules.coupon.service.CouponService;
 import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
 import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
 import com.moden.modenapi.modules.designer.repository.DesignerDetailRepository;
+import com.moden.modenapi.modules.designer.service.DesignerService;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +25,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,6 +40,7 @@ public class CustomerService extends BaseService<CustomerDetail> {
     private final HairStudioDetailRepository studioRepo;
     private final AuthLocalService authLocalService;
     private final DesignerDetailRepository designerDetailRepository;
+    private final CouponService couponService;
 
 
     // CustomerService.java (parcha)
@@ -60,6 +67,9 @@ public class CustomerService extends BaseService<CustomerDetail> {
         UUID assignedDesignerId = resolveDesignerForAssignment(null, studioId); // ❗ doim avtomatik
 
         // 4) CustomerDetail
+        // ...
+
+// 4) CustomerDetail
         CustomerDetail cd = CustomerDetail.builder()
                 .userId(user.getId())
                 .studioId(studioId)
@@ -69,6 +79,27 @@ public class CustomerService extends BaseService<CustomerDetail> {
                 .notificationEnabled(false)
                 .build();
 
+        customerRepo.save(cd);
+
+// 5) ✅ Ro'yxatdan o'tishda birinchi tashrif kuponi (10%, 7 kun)
+//    - Kuponda studioId va userId majburiy ravishda beriladi
+        CouponCreateRequest firstVisitReq = new CouponCreateRequest(
+                studioId,                 // ✅ kupon.studioId
+                user.getId(),             // ✅ kupon.userId
+                "💈 First Visit — 10% discount",
+                BigDecimal.valueOf(10.0), // discountRate (exclusivity: amount=null)
+                null,                     // discountAmount
+                LocalDate.now(),          // startDate = bugun
+                LocalDate.now().plusDays(30), // expiryDate = 30 kun
+                false,                    // birthdayCoupon
+                true                      // firstVisitCoupon
+        );
+
+// Kupon yaratish va ID sini olish
+        CouponResponse createdCoupon = couponService.create(firstVisitReq);
+
+// CustomerDetail.ga kupon ID sini yozib qo‘yish
+        cd.setFirstVisitCouponId(createdCoupon.id());
         customerRepo.save(cd);
     }
 

@@ -1,3 +1,4 @@
+
 package com.moden.modenapi.config;
 
 import io.swagger.v3.oas.models.Components;
@@ -23,6 +24,7 @@ public class OpenApiConfig {
                         .description("Hair Salon Platform - Backend API (JWT Authentication Enabled)")
                         .version("v1.0.0"))
                 .addServersItem(new Server().url("http://localhost:8080").description("Production"))
+                .addServersItem(new Server().url("http://122.37.246.79:7005").description("Server"))
                 .addServersItem(new Server().url("https://moden-back.onrender.com").description("Production"))
                 .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
                 .components(new Components()

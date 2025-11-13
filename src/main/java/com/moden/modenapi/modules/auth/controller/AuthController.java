@@ -46,7 +46,6 @@ public class AuthController {
 
     /** ✅ 하나의 엔드포인트: ADMIN이면 기본 프로필, 그 외엔 detail object만 반환 */
     @GetMapping("/me")
-    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ResponseMessage<?>> me() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         String principal = (auth.getPrincipal() instanceof String s) ? s : auth.getName();

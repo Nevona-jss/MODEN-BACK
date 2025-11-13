@@ -51,4 +51,9 @@ public class CustomerDetail extends BaseEntity {
     private boolean consentMarketing = false;
 
     private boolean notificationEnabled = false;  //카카오 알림톡 (필수)동의/미동의
+    @Column(name = "first_visit_coupon_id", columnDefinition = "uniqueidentifier")
+    private UUID firstVisitCouponId;
+
+    @Column(name = "last_birthday_coupon_id", columnDefinition = "uniqueidentifier")
+    private UUID lastBirthdayCouponId;
 }

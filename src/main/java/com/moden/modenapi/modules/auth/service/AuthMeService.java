@@ -95,7 +95,8 @@ public class AuthMeService {
                         c.getProfileImageUrl(),
                         c.getVisitReason(),
                         c.isConsentMarketing(),
-                        c.getDesignerId()
+                        c.getDesignerId(),
+                        c.getStudioId()
                 );
             }
             default -> {

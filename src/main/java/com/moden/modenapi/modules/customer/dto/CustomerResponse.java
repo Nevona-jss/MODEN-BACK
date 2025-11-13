@@ -17,5 +17,6 @@ public record CustomerResponse(
         String profileImageUrl,
         String visitReason,
         boolean consentMarketing,
-        UUID designerId
+        UUID designerId,
+        UUID studioId
 ) {}

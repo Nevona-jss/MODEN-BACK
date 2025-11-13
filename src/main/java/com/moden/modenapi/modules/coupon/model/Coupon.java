@@ -38,6 +38,9 @@ public class Coupon extends BaseEntity {
     @Column(nullable = false, length = 20)
     private CouponStatus status = CouponStatus.AVAILABLE; // AVAILABLE, USED, EXPIRED
 
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
     @Column(name = "expiry_date")
     private LocalDate expiryDate;
 

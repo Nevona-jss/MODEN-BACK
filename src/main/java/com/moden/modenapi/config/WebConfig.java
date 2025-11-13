@@ -25,6 +25,9 @@ public class WebConfig implements WebMvcConfigurer {
                                 "http://localhost:8080",
                                 "http://127.0.0.1:3000",
                                 "http://localhost:5173",
+                                "http://122.37.246.79:7005",
+                                "http://122.37.246.79:7006",
+                                "http://122.37.246.79:7007",
                                 "http://127.0.0.1:5173",
                                 "http://192.168.1.25:3000",
 

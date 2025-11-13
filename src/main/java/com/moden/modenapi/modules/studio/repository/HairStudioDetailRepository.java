@@ -1,6 +1,7 @@
 package com.moden.modenapi.modules.studio.repository;
 
 import com.moden.modenapi.common.repository.BaseRepository;
+import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -8,6 +9,21 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 public interface HairStudioDetailRepository extends BaseRepository<HairStudioDetail, UUID> {
+
+    // Faol studiyalar ID ro'yxati (agar kerak bo'lsa scheduler’da ishlatamiz)
+    @Query("select s.id from HairStudioDetail s where s.deletedAt is null")
+    List<UUID> findActiveStudioIds();
+
+    // Muayyan studioda bugun tug‘ilgan mijozlar
+    @Query("""
+           select c
+           from CustomerDetail c
+           where c.deletedAt is null
+             and c.studioId = :studioId
+             and function('month', c.birthdate) = :month
+             and function('day',  c.birthdate) = :day
+           """)
+    List<CustomerDetail> findBirthdayCustomersToday(UUID studioId, int month, int day);
 
     Optional<HairStudioDetail> findByIdAndDeletedAtIsNull(UUID id);            // ✅ ishlatiladi
     Optional<HairStudioDetail> findByUserIdAndDeletedAtIsNull(UUID userId);    // ✅ ishlatiladi

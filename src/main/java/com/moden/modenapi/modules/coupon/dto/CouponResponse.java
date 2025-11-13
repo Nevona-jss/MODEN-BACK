@@ -1,15 +1,13 @@
 package com.moden.modenapi.modules.coupon.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.moden.modenapi.common.enums.CouponStatus;
-import io.swagger.v3.oas.annotations.media.Schema;
-
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
-@Schema(description = "Coupon response DTO")
-public record CouponRes(
+public record CouponResponse(
         UUID id,
         UUID studioId,
         UUID userId,
@@ -17,9 +15,19 @@ public record CouponRes(
         BigDecimal discountRate,
         BigDecimal discountAmount,
         CouponStatus status,
-        boolean birthdayCoupon,
-        boolean firstVisitCoupon,
+
+        @JsonProperty("boshlanishSana")
+        LocalDate startDate,
+
+        @JsonProperty("tugashSana")
         LocalDate expiryDate,
+
+        @JsonProperty("yaratilganSana")
         Instant createdAt,
-        Instant updatedAt
+
+        @JsonProperty("yangilanganSana")
+        Instant updatedAt,
+
+        boolean birthdayCoupon,
+        boolean firstVisitCoupon
 ) {}
