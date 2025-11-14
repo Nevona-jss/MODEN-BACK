@@ -1,15 +1,18 @@
 package com.moden.modenapi.modules.qa.dto;
 
-
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 @Schema(name = "QACreateRequest", description = "Create new inquiry (customer side)")
 public record QACreateRequest(
 
-        @Schema(description = "Inquiry title", example = "예약 관련 문의", required = true)
-        @NotBlank String title,
+        @NotBlank
+        @Size(max = 200)
+        @Schema(description = "Inquiry title", example = "두피 케어 상품 문의")
+        String title,
 
-        @Schema(description = "Inquiry content", example = "예약 취소는 어디서 하나요?", required = true)
-        @NotBlank String content
+        @NotBlank
+        @Schema(description = "Inquiry content", example = "어제 받은 두피 클리닉 후 집에서 어떤 샴푸를 써야 할까요?")
+        String content
 ) {}

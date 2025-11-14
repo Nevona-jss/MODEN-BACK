@@ -10,14 +10,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -41,8 +38,6 @@ public class BirthdayCouponScheduler {
         int month = today.getMonthValue();
         int day   = today.getDayOfMonth();
 
-        Instant now = Instant.now();
-
         // 1) bugun tug'ilgan barcha customerlar
         List<CustomerDetail> birthdayCustomers =
                 customerDetailRepository.findAllByBirthday(month, day);
@@ -51,9 +46,9 @@ public class BirthdayCouponScheduler {
 
         for (CustomerDetail customer : birthdayCustomers) {
             UUID customerId = customer.getId();        // ✅ 자동 customer ID
-            UUID studioId   = customer.getStudioId();  // ✅ 자동 studio ID
+            UUID studioId   = customer.getStudioId();  // ✅ customerId dan studioId topildi
 
-            // 2) ushbu studioning birthday couponini topamiz
+            // 2) ushbu studioning active birthday couponini topamiz
             Optional<Coupon> birthdayCouponOpt =
                     couponRepository.findActiveBirthdayCouponForStudio(studioId, today);
 
@@ -66,7 +61,7 @@ public class BirthdayCouponScheduler {
             Coupon birthdayCoupon = birthdayCouponOpt.get();
 
             try {
-                // 3) mavjud bo'lmasa yozib qo'yish (중복 체크는 assignToCustomer 안에 있음)
+                // 3) CustomerCouponService 에서 중복 체크 + 저장
                 customerCouponService.assignToCustomer(studioId, birthdayCoupon.getId(), customerId);
 
                 log.info("Birthday coupon assigned. studioId={}, customerId={}, couponId={}",

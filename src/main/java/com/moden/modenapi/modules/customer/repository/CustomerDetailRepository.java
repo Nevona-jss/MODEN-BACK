@@ -14,6 +14,26 @@ import java.util.UUID;
 @Repository
 public interface CustomerDetailRepository extends BaseRepository<CustomerDetail, UUID> {
 
+    @Query("""
+        select c
+        from CustomerDetail c
+        where c.userId = :userId
+          and c.studioId = :studioId
+          and c.deletedAt is null
+    """)
+    Optional<CustomerDetail> findByUserIdAndHairStudioIdAndDeletedAtIsNull(
+            @Param("userId") UUID userId,
+            @Param("studioId") UUID studioId
+    );
+
+    @Query("""
+        select c
+        from CustomerDetail c
+        where c.studioId = :studioId
+          and c.deletedAt is null
+        order by coalesce(c.updatedAt, c.createdAt) desc
+    """)
+    List<CustomerDetail> findAllByStudioId(UUID studioId);
 
     /**
      * Bugun tug'ilgan kuni bo'lgan barcha customerlar (studioId 상관없이)

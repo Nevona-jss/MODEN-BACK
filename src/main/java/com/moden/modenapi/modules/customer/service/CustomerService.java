@@ -2,6 +2,7 @@ package com.moden.modenapi.modules.customer.service;
 
 import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.service.BaseService;
+import com.moden.modenapi.common.utils.CurrentUserUtil;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.modules.auth.service.AuthLocalService;
@@ -18,6 +19,7 @@ import com.moden.modenapi.modules.designer.service.DesignerService;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.GrantedAuthority;
@@ -43,6 +45,9 @@ public class CustomerService extends BaseService<CustomerDetail> {
     private final DesignerDetailRepository designerDetailRepository;
     private final CouponService couponService;
     private final CustomerCouponService customerCouponService;
+
+
+
 
     @Transactional
     public void customerRegister(CustomerSignUpRequest req, String rawPassword) {
@@ -106,8 +111,6 @@ public class CustomerService extends BaseService<CustomerDetail> {
         cd.setFirstVisitCouponId(createdCoupon.id());
         customerRepo.save(cd);
     }
-
-
 
 
     /* ================= Helpers ================= */
@@ -217,15 +220,6 @@ public class CustomerService extends BaseService<CustomerDetail> {
         return customerRepo.save(detail);
     }
 
-    /* -------------------- STUDIO actions -------------------- */
-    @Transactional(readOnly = true)
-    public List<CustomerDetail> listStudioCustomers() {
-        UUID studioId = currentStudioId();             // principal = STUDIO ID
-        requireStudio(studioId);
-        return customerRepo.findAllByStudio(studioId); // bevosita studioId bilan
-    }
-
-
     @Transactional
     public CustomerDetail updateCustomerAsStudio(UUID customerUserId, CustomerProfileUpdateReq req) {
         UUID studioUserId = currentUserId();
@@ -254,6 +248,44 @@ public class CustomerService extends BaseService<CustomerDetail> {
         customerRepo.save(target);
     }
 
+    /**
+     * 현재 로그인한 HAIR_STUDIO 사용자의 스튜디오에 속한 customer인지 검증.
+     * 아니라면 403.
+     */
+    @Transactional(readOnly = true)
+    public CustomerDetail ensureCustomerOfCurrentStudio(UUID customerUserId) {
+        UUID ownerUserId = CurrentUserUtil.currentUserId();
+
+        var studios = studioRepo.findActiveByUserIdOrderByUpdatedDesc(
+                ownerUserId, PageRequest.of(0, 1)
+        );
+        if (studios.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for current user");
+        }
+        UUID studioId = studios.get(0).getId();
+
+        return customerRepo
+                .findByUserIdAndHairStudioIdAndDeletedAtIsNull(customerUserId, studioId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "Customer does not belong to your studio"
+                ));
+    }
+
+    @Transactional(readOnly = true)
+    public List<CustomerDetail> listStudioCustomers() {
+        UUID ownerUserId = CurrentUserUtil.currentUserId();
+
+        var studios = studioRepo.findActiveByUserIdOrderByUpdatedDesc(
+                ownerUserId, PageRequest.of(0, 1)
+        );
+        if (studios.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for current user");
+        }
+        UUID studioId = studios.get(0).getId();
+
+        return customerRepo.findAllByStudioId(studioId);
+    }
 
 
     @Override

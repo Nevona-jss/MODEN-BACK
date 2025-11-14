@@ -27,6 +27,7 @@ import java.util.UUID;
 public class CouponController {
 
     private final CouponService couponService;
+    private final CustomerCouponService customerCouponService;   // ✅ 추가
 
     // ----------------------------------------------------------------------
     // CREATE (policy)
@@ -51,16 +52,11 @@ public class CouponController {
             @PathVariable UUID id,
             @Valid @RequestBody CouponUpdateRequest req
     ) {
-        // ✅ bu yerda DB dan kuponni yangilab, eng so‘nggi holatini qaytaramiz
         CouponResponse updated = couponService.update(id, req);
-
         return ResponseEntity.ok(
                 ResponseMessage.success("Coupon updated successfully.", updated)
         );
     }
-
-
-
 
     // ----------------------------------------------------------------------
     // GET ONE (policy)
@@ -80,25 +76,41 @@ public class CouponController {
     @Operation(summary = "Studio bo‘yicha barcha kupon policy-lari")
     public ResponseEntity<ResponseMessage<List<CouponResponse>>> listByStudio() {
         UUID currentUserId = CurrentUserUtil.currentUserId();  // USER ID
-        var list = couponService.listByStudioForCurrentUser(currentUserId);  // ✅ userId 기반
+        var list = couponService.listByStudioForCurrentUser(currentUserId);
         return ResponseEntity.ok(ResponseMessage.success("Studio coupons fetched.", list));
     }
 
     // ----------------------------------------------------------------------
-// LIST BY STUDIO + STATUS (policy)
-// ----------------------------------------------------------------------
+    // LIST BY STUDIO + STATUS (policy)
+    // ----------------------------------------------------------------------
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Studio kupon policy-lari (status bo‘yicha)")
     @GetMapping("/filter")
     public ResponseEntity<ResponseMessage<List<CouponResponse>>> listByStudioAndStatus(
             @RequestParam(required = false) CouponStatus status
     ) {
-        UUID currentUserId = CurrentUserUtil.currentUserId();   // 🔹 USER ID
-        var list = couponService.listByStudioAndStatusForCurrentUser(currentUserId, status); // 🔹 수정된 서비스 호출
-
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        var list = couponService.listByStudioAndStatusForCurrentUser(currentUserId, status);
         return ResponseEntity.ok(
                 ResponseMessage.success("Studio coupons fetched.", list)
         );
     }
 
+    // ----------------------------------------------------------------------
+    // STUDIO: 특정 userId(customer)의 쿠폰 리스트 보기
+    // ----------------------------------------------------------------------
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @Operation(
+            summary = "List coupons for a customer (by userId)",
+            description = "Studio userId (customer) kiritib, shu studioning ushbu customerga bergan barcha kuponlarini ko'radi."
+    )
+    @GetMapping("/customer/{userId}")
+    public ResponseEntity<ResponseMessage<List<CustomerCouponRes>>> listCustomerCoupons(
+            @PathVariable("userId") UUID customerUserId
+    ) {
+        var list = customerCouponService.listCouponsForCustomerUser(customerUserId); // ✅ 존재하는 메서드 사용
+        return ResponseEntity.ok(
+                ResponseMessage.success("Customer coupons for this studio", list)
+        );
+    }
 }

@@ -14,10 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,7 +26,6 @@ public class CustomerCouponService {
     private final CustomerCouponRepository customerCouponRepository;
     private final CouponRepository couponRepository;
     private final CustomerDetailRepository customerDetailRepository;
-
 
 
     /**
@@ -56,82 +52,61 @@ public class CustomerCouponService {
 
         return getCouponsForCustomer(customerId, status);
     }
-    /**
-     * Berilgan studioda, bugun tug'ilgan kuni bo'lgan customerlarga
-     * birthday coupon berish.
-     */
-    public int assignBirthdayCouponsForToday(UUID studioId, UUID birthdayCouponId) {
-
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Tashkent"));
-        int month = today.getMonthValue();
-        int day   = today.getDayOfMonth();
-
-        // 1) Kupon mavjudmi va studiogami?
-        Coupon coupon = couponRepository.findByIdAndDeletedAtIsNull(birthdayCouponId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Birthday coupon topilmadi"));
-
-        if (!coupon.getStudioId().equals(studioId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Birthday coupon ushbu studionga tegishli emas");
-        }
-
-        // 2) Bugun tug'ilgan kundagi customerlar
-        List<CustomerDetail> birthdayCustomers =
-                customerDetailRepository.findBirthdayCustomersOnDate(studioId, month, day);
-
-        int createdCount = 0;
-
-        for (CustomerDetail customer : birthdayCustomers) {
-            UUID customerId = customer.getId();
-
-            // 3) Allaqachon shu birthday kupon bor-yo'qligini tekshirish
-            boolean alreadyHas = customerCouponRepository.existsByCouponIdAndCustomerIdAndStatusIn(
-                    birthdayCouponId,
-                    customerId,
-                    List.of(CouponStatus.AVAILABLE, CouponStatus.EXPIRED, CouponStatus.USED)
-            );
-            if (alreadyHas) {
-                continue;
-            }
-
-            // 4) Yangi customer_coupon yozamiz
-            CustomerCoupon cc = CustomerCoupon.builder()
-                    .studioId(studioId)
-                    .couponId(birthdayCouponId)
-                    .customerId(customerId)
-                    .status(CouponStatus.AVAILABLE)
-                    .issuedAt(Instant.now())
-                    .build();
-
-            customerCouponRepository.save(cc);
-            createdCount++;
-        }
-
-        return createdCount;
-    }
 
     /**
-     * Kuponni biror customerga berish (customer_coupon ga yozish)
+     * 한 명의 customer 에게 쿠폰 1개 발급
+     * - studio/coupon/customer 유효성 체크
+     * - 이미 가지고 있는 쿠폰인지 중복 체크
+     * - 이상 없으면 CustomerCoupon 저장
      */
-    public CustomerCoupon assignToCustomer(UUID studioId, UUID couponId, UUID customerId) {
+    @Transactional
+    public void assignToCustomer(UUID studioId, UUID couponId, UUID customerId) {
 
-        // 1) Kupon mavjudmi va o‘sha studiogami
+        // 1) 쿠폰 존재 + 삭제 안된 것
         Coupon coupon = couponRepository.findByIdAndDeletedAtIsNull(couponId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Coupon not found"));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Coupon topilmadi (id=" + couponId + ")"
+                ));
 
+        // 2) 쿠폰이 해당 studio 의 것인지
         if (!coupon.getStudioId().equals(studioId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Coupon ushbu studionga tegishli emas");
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Coupon ushbu studionga tegishli emas"
+            );
         }
 
-        // 2) Shu customer + shu coupon bo‘yicha allaqachon yozuv bormi?
+        // 3) customer 존재 + studio 매칭 확인
+        CustomerDetail customer = customerDetailRepository.findById(customerId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Customer topilmadi (id=" + customerId + ")"
+                ));
+
+        if (!customer.getStudioId().equals(studioId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Customer ushbu studionga tegishli emas"
+            );
+        }
+
+        // 4) 이미 이 쿠폰을 가진 상태인지? (AVAILABLE / EXPIRED / USED 모두 포함)
         boolean alreadyHas = customerCouponRepository.existsByCouponIdAndCustomerIdAndStatusIn(
                 couponId,
                 customerId,
                 List.of(CouponStatus.AVAILABLE, CouponStatus.EXPIRED, CouponStatus.USED)
         );
+
         if (alreadyHas) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Customer allaqachon bu kuponni olgan");
+            // 이미 발급된 경우는 에러로 던져서 scheduler 에서 catch 해서 skip 하도록
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Customer already has this coupon"
+            );
         }
 
+        // 5) CustomerCoupon 저장 (여기서 studioId 는 customer 에서 가져온 값과 동일)
         CustomerCoupon cc = CustomerCoupon.builder()
                 .studioId(studioId)
                 .couponId(couponId)
@@ -140,7 +115,7 @@ public class CustomerCouponService {
                 .issuedAt(Instant.now())
                 .build();
 
-        return customerCouponRepository.save(cc);
+        customerCouponRepository.save(cc);
     }
 
     /**
@@ -197,15 +172,40 @@ public class CustomerCouponService {
                 cc.getId(),
                 cc.getStudioId(),
                 cc.getCouponId(),
-                coupon != null ? coupon.getName()           : null,
-                coupon != null ? coupon.getDiscountRate()   : null,
+                coupon != null ? coupon.getName() : null,
+                coupon != null ? coupon.getDiscountRate() : null,
                 coupon != null ? coupon.getDiscountAmount() : null,
                 cc.getStatus(),
-                coupon != null ? coupon.getStartDate()      : null,
-                coupon != null ? coupon.getExpiryDate()     : null,
+                coupon != null ? coupon.getStartDate() : null,
+                coupon != null ? coupon.getExpiryDate() : null,
                 cc.getIssuedAt(),
                 cc.getUsedAt()
         );
     }
+
+
+    @Transactional(readOnly = true)
+    public List<CustomerCouponRes> listCouponsForCustomerUser(UUID customerUserId) {
+        // 1) userId → CustomerDetail topish (latest record)
+        var page1 = PageRequest.of(0, 1);
+
+        var customerOpt = customerDetailRepository
+                .findActiveByUserIdOrderByUpdatedDesc(customerUserId, page1)
+                .stream()
+                .findFirst();
+
+        if (customerOpt.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Customer not found"
+            );
+        }
+
+        CustomerDetail customer = customerOpt.get();
+
+        // 2) CustomerDetail.id (customerId) bo'yicha kuponlar (status=null → hammasi)
+        return getCouponsForCustomer(customer.getId(), null);
+    }
+
 
 }

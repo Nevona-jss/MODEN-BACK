@@ -14,6 +14,18 @@ import java.util.*;
 @Repository
 public interface CustomerCouponRepository extends BaseRepository<CustomerCoupon, UUID> {
 
+    @Query("""
+        select cc
+        from CustomerCoupon cc
+        where cc.studioId = :studioId
+          and cc.customerId = :customerId
+          and cc.deletedAt is null
+        order by coalesce(cc.updatedAt, cc.createdAt) desc
+    """)
+    List<CustomerCoupon> findAllByStudioIdAndCustomerIdAndDeletedAtIsNull(
+            @Param("studioId") UUID studioId,
+            @Param("customerId") UUID customerId
+    );
     Optional<CustomerCoupon> findByIdAndDeletedAtIsNull(UUID id);
 
     List<CustomerCoupon> findAllByCustomerIdAndDeletedAtIsNull(UUID customerId);

@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public interface StudioPointPolicyRepository extends BaseRepository<StudioPointPolicy, UUID> {
     Optional<StudioPointPolicy> findByStudioIdAndDeletedAtIsNull(UUID studioId);
+
 }

@@ -22,7 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "Admin", description = "System administration APIs (ADMIN role only)")
+@Tag(name = "ADMIN", description = "System administration APIs (ADMIN role only)")
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
@@ -60,6 +60,7 @@ public class AdminController {
 
 
     // ------------------------- Read one -------------------------------------------
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Get a studio by ID", description = "Retrieve details of a single active studio (ADMIN only).")
     @GetMapping("/admin/studios/get{studioId}")
     public ResponseEntity<ResponseMessage<StudioRes>> getStudio(@PathVariable UUID studioId) {
@@ -68,6 +69,7 @@ public class AdminController {
     }
 
     // ------------------------- List all -------------------------------------------
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "List all active studios", description = "Retrieve all active (non-deleted) studios (ADMIN only).")
     @GetMapping("/admin/studios/list")
     public ResponseEntity<ResponseMessage<List<StudioRes>>> getAllStudios() {
@@ -91,6 +93,7 @@ public class AdminController {
     // ------------------------- Soft Delete ----------------------------------------
     @Operation(summary = "Soft delete a studio", description = "Marks a studio as deleted without removing it from the database (ADMIN only).")
     @DeleteMapping("/admin/studios/delete/{studioId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ResponseMessage<?>> deleteStudio(@PathVariable UUID studioId) {
         adminService.deleteStudio(studioId);
         return ResponseEntity.ok(ResponseMessage.success("Studio deleted successfully"));

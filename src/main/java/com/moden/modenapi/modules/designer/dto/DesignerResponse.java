@@ -1,24 +1,30 @@
 package com.moden.modenapi.modules.designer.dto;
 
+import com.moden.modenapi.common.enums.DesignerStatus;
 import com.moden.modenapi.common.enums.Position;
 import com.moden.modenapi.common.enums.Role;
-import io.swagger.v3.oas.annotations.media.Schema;
+import com.moden.modenapi.common.enums.Weekday;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+
 public record DesignerResponse(
-        UUID id,          // 1
-        UUID userId,      // 2
-        UUID studioId,    // 3
-        String idForLogin,// 4
+        UUID id,              // designer_detail.id
+        UUID userId,          // user.id
+        UUID studioId,        // hair_studio_id
+        String idForLogin,    // DS-XXXXX-12345
 
-        Role role,        // 5 ✅ enum Role
-        String phone,     // 6 ✅ 전화번호
-        Position position,// 7
+        Role role,            // USER.role  (DESIGNER)
+        String fullName,      // ✅ USER.fullName
+        String phone,         // ✅ USER.phone
 
-        String bio,                   // 8
-        List<PortfolioItemRes> portfolio, // 9
-        Instant createdAt,            // 10
-        Instant updatedAt             // 11
+        Position position,    // DESINGER / MANAGER ...
+        DesignerStatus status,// WORKING / LEAVE ...
+        List<Weekday> daysOff,// 쉬는 요일 리스트
+
+        String bio,                   // 소개
+        List<PortfolioItemRes> portfolio, // 포트폴리오
+        Instant createdAt,
+        Instant updatedAt
 ) {}

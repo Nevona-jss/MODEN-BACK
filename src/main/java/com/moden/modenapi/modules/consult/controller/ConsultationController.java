@@ -15,7 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.*;
 
-@Tag(name = "Consultation", description = "Customer–Designer consultation APIs")
+@Tag(name = "CONSULTATION", description = "Customer–Designer consultation APIs")
 @RestController
 @RequestMapping("/api/studios/consultations")
 @RequiredArgsConstructor

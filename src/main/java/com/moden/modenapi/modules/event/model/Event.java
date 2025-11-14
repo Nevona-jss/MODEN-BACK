@@ -4,6 +4,7 @@ import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -20,8 +21,8 @@ public class Event extends BaseEntity {
     @Lob
     private String description;
 
-    @Column(length = 100)
-    private String type; // e.g. DISCOUNT, PROMOTION, NOTICE, etc.
+    @Column(name = "discount_amount")
+    private BigDecimal discount;
 
     @Column(length = 500)
     private String imageUrl; // ✅ event banner image URL

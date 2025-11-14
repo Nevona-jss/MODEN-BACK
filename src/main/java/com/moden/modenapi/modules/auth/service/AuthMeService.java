@@ -72,22 +72,31 @@ public class AuthMeService {
                         ? u.getRole()
                         : Role.DESIGNER;
 
+                String fullName = (u != null) ? u.getFullName() : null;
+                String phone    = (u != null) ? u.getPhone()    : null;
+
                 return new DesignerResponse(
-                        d.getId(),                // id
-                        d.getUserId(),            // userId
-                        d.getHairStudioId(),      // studioId
-                        d.getIdForLogin(),        // idForLogin
+                        d.getId(),                 // id
+                        d.getUserId(),             // userId
+                        d.getHairStudioId(),       // studioId
+                        d.getIdForLogin(),         // idForLogin
 
-                        effectiveRole,            // ✅ role (Role enum)
-                        u != null ? u.getPhone() : null,  // ✅ phone (String)
-                        d.getPosition(),          // position
+                        effectiveRole,             // role
+                        fullName,                  // fullName
+                        phone,                     // phone
 
-                        d.getBio(),               // bio
-                        Collections.emptyList(),  // portfolio
-                        d.getCreatedAt(),         // createdAt
-                        d.getUpdatedAt()          // updatedAt
+                        d.getPosition(),           // position
+                        d.getStatus(),             // status
+                        d.getDaysOff(),            // daysOff
+
+                        d.getBio(),                // bio
+                        Collections.emptyList(),   // portfolio (bu yerda portfolioni yuklamaymiz)
+
+                        d.getCreatedAt(),          // createdAt
+                        d.getUpdatedAt()           // updatedAt
                 );
             }
+
 
             case "CUSTOMER" -> {
                 var c = base.customer;

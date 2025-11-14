@@ -30,5 +30,13 @@ public interface DesignerDetailRepository extends BaseRepository<DesignerDetail,
     """)
     List<DesignerDetail> findActiveByUserIdOrderByUpdatedDesc(@Param("userId") UUID userId, Pageable pageable);
 
+    @Query("""
+    select d
+    from DesignerDetail d
+    where d.hairStudioId = :studioId
+      and d.deletedAt is null
+    order by coalesce(d.updatedAt, d.createdAt) desc
+""")
+    List<DesignerDetail> findAllActiveByHairStudioIdOrderByUpdatedDesc(@Param("studioId") UUID studioId);
 
 }

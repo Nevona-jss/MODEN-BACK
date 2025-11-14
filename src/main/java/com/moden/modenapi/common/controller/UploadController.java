@@ -4,6 +4,7 @@ import com.moden.modenapi.common.dto.UploadResponse;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.utils.FileNameUtil;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -18,7 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.Objects;
-
+@Tag(name = "IMAGE UPLOAD", description = "Universal image uploader")
 @RestController
 @RequestMapping("/api/universalUploads")
 @RequiredArgsConstructor

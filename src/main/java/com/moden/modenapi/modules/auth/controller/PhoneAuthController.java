@@ -17,7 +17,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Tag(name = "Phone Auth", description = "Firebase Phone verification & password reset")
+@Tag(name = "FIREBASE", description = "Firebase Phone verification & password reset")
 @RestController
 @RequestMapping("/api/studios")
 @RequiredArgsConstructor
@@ -26,6 +26,7 @@ public class PhoneAuthController {
     private final UserRepository userRepo;
     private final AuthLocalService authLocal;
     private final FirebaseAuthService firebaseAuthService;
+
 
     // very simple in-memory reset token store (TTL 10 min)
     private static final Map<String, ResetToken> TOKENS = new ConcurrentHashMap<>();

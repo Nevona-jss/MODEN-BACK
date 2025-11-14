@@ -6,11 +6,12 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-@Schema(description = "Response DTO for studio point policy")
+@Schema(description = "Studio point policy response")
 public record StudioPointPolicyRes(
         UUID id,
         UUID studioId,
-        BigDecimal pointRate,
+        BigDecimal pointRate,   // 5.00 → 5%
+
         Instant createdAt,
         Instant updatedAt
 ) {}

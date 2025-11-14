@@ -3,6 +3,7 @@ package com.moden.modenapi.modules.designer.service;
 import com.moden.modenapi.common.enums.DesignerStatus;
 import com.moden.modenapi.common.enums.Position;
 import com.moden.modenapi.common.enums.Role;
+import com.moden.modenapi.common.enums.Weekday;
 import com.moden.modenapi.common.service.BaseService;
 import com.moden.modenapi.modules.auth.model.AuthLocal;
 import com.moden.modenapi.modules.auth.model.User;
@@ -28,7 +29,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -49,13 +49,17 @@ public class DesignerService extends BaseService<DesignerDetail> {
 
     /* ===================== CREATE ===================== */
 
-    /** Studio creates designer. hairStudioId is taken from current studio (token principal). */
+    /**
+     * Studio dizayner yaratadi.
+     * hairStudioId – token’dagi current HAIR_STUDIO foydalanuvchisidan olinadi.
+     */
     @Transactional
     public DesignerResponse createDesigner(HttpServletRequest request, DesignerCreateDto req) {
         ensureStudioRole();
 
         UUID currentUserId = getCurrentUserIdOrThrow();
-        var myStudios = hairStudioRepo.findActiveByUserIdOrderByUpdatedDesc(currentUserId, PageRequest.of(0, 1));
+        var myStudios =
+                hairStudioRepo.findActiveByUserIdOrderByUpdatedDesc(currentUserId, PageRequest.of(0, 1));
         if (myStudios.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for current user");
         }
@@ -83,7 +87,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
                     .build();
         } else {
             user.setFullName(fullName);
-            user.setRole(Role.DESIGNER); // sizning tanlovingiz bo‘yicha majburan DESIGNER
+            user.setRole(Role.DESIGNER); // majburan DESIGNER
         }
         user = userRepository.save(user);
 
@@ -101,7 +105,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
         }
         authLocalRepository.save(authLocal);
 
-        // 3) Idempotency: shu user allaqachon designer emasligini tekshiring
+        // 3) Idempotency: shu user allaqachon designer emasligini tekshirish
         var existing = designerRepository.findByUserId(user.getId()).orElse(null);
         if (existing != null) {
             if (studioId.equals(existing.getHairStudioId())) {
@@ -111,7 +115,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
             }
         }
 
-        // 4) Unique login code (bounded retries)
+        // 4) Unique login code
         String loginCode = generateDesignerLoginCode();
         int guard = 0;
         while (designerRepository.existsByIdForLogin(loginCode)) {
@@ -121,7 +125,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
             loginCode = generateDesignerLoginCode();
         }
 
-        // 5) DesignerDetail — MUHIM: role ni ham set qiling (DB: NOT NULL)
+        // 5) DesignerDetail
         DesignerDetail d = DesignerDetail.builder()
                 .userId(user.getId())
                 .hairStudioId(studioId)
@@ -132,55 +136,68 @@ public class DesignerService extends BaseService<DesignerDetail> {
                 .portfolioItemIds(new ArrayList<>())
                 .build();
 
-        d = create(d); // persist/save
+        // ✅ daysOff: Integer kod → Weekday list
+        if (req.daysOff() != null && !req.daysOff().isEmpty()) {
+            List<Weekday> offDays = req.daysOff().stream()
+                    .map(Weekday::fromCode)     // 0..6 → Weekday enum
+                    .toList();
+            d.setDaysOff(offDays);
+        }
 
-        // 6) Portfolio mapping (hozircha bo‘sh)
-        List<PortfolioItemRes> portfolio = List.of();
+        d = create(d); // persist
 
-        // 7) Response
-        return new DesignerResponse(
-                d.getId(),
-                user.getId(),
-                studioId,
-                d.getIdForLogin(),
-                user.getRole(),          // Role.DESIGNER
-                user.getPhone(),
-                d.getPosition(),
-                d.getBio(),
-                portfolio,
-                d.getCreatedAt(),
-                d.getUpdatedAt()
-        );
+        // 6) Hozircha portfolio bo‘sh
+        List<PortfolioItemRes> items = List.of();
+
+        // 7) Javob
+        return mapToRes(d, user, items);
     }
-
 
     /* ===================== UPDATE (SELF) ===================== */
 
-    /** Designer updates own profile */
-    public DesignerResponse updateOwnProfile(HttpServletRequest request, DesignerUpdateReq req) {
+    /** Designer o‘zi profilini yangilaydi */
+    public DesignerResponse updateProfile(HttpServletRequest request, DesignerUpdateReq req) {
         UUID currentUserId = getCurrentUserIdOrThrow();
 
         DesignerDetail d = designerRepository.findByUserIdAndDeletedAtIsNull(currentUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Designer not found"));
 
         if (req.bio() != null) d.setBio(req.bio());
+
         if (req.phone() != null) {
             userRepository.findById(d.getUserId()).ifPresent(u -> {
                 u.setPhone(req.phone());
                 userRepository.save(u);
             });
         }
+
         if (req.position() != null) {
-            try { d.setPosition(Position.valueOf(req.position())); } catch (Exception ignore) {}
+            try {
+                d.setPosition(Position.valueOf(req.position()));
+            } catch (Exception ignore) {}
         }
+
         if (req.status() != null) {
-            try { d.setStatus(DesignerStatus.valueOf(req.status())); } catch (Exception ignore) {}
+            try {
+                d.setStatus(DesignerStatus.valueOf(req.status()));
+            } catch (Exception ignore) {}
         }
+
+        if (req.daysOff() != null) {
+            List<Weekday> offDays = req.daysOff().stream()
+                    .map(Weekday::fromCode)
+                    .toList();
+            d.setDaysOff(offDays);
+        }
+
         update(d);
 
         var user = userRepository.findById(d.getUserId()).orElse(null);
-        var items = portfolioRepo.findAllByDesignerIdAndDeletedAtIsNullOrderByCreatedAtAsc(d.getId())
-                .stream().map(it -> new PortfolioItemRes(it.getId(), it.getImageUrl(), it.getCaption())).toList();
+        var items = portfolioRepo
+                .findAllByDesignerIdAndDeletedAtIsNullOrderByCreatedAtAsc(d.getId())
+                .stream()
+                .map(it -> new PortfolioItemRes(it.getId(), it.getImageUrl(), it.getCaption()))
+                .toList();
 
         return mapToRes(d, user, items);
     }
@@ -193,8 +210,11 @@ public class DesignerService extends BaseService<DesignerDetail> {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Designer not found"));
 
         var user = userRepository.findById(d.getUserId()).orElse(null);
-        var items = portfolioRepo.findAllByDesignerIdAndDeletedAtIsNullOrderByCreatedAtAsc(d.getId())
-                .stream().map(it -> new PortfolioItemRes(it.getId(), it.getImageUrl(), it.getCaption())).toList();
+        var items = portfolioRepo
+                .findAllByDesignerIdAndDeletedAtIsNullOrderByCreatedAtAsc(d.getId())
+                .stream()
+                .map(it -> new PortfolioItemRes(it.getId(), it.getImageUrl(), it.getCaption()))
+                .toList();
 
         return mapToRes(d, user, items);
     }
@@ -209,7 +229,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
 
     /* ===================== DELETE (SOFT) ===================== */
 
-    /** Studio deletes its own designer (SOFT DELETE only) */
+    /** Studio o‘z dizaynerini SOFT DELETE qiladi */
     public void deleteDesigner(HttpServletRequest request, UUID designerId) {
         ensureStudioRole();
         UUID studioId = getStudioIdFromCurrentStudio();
@@ -223,12 +243,45 @@ public class DesignerService extends BaseService<DesignerDetail> {
         softDelete(d.getId()); // BaseEntity.deletedAt ga vaqt yoziladi
     }
 
+    /* ===================== LIST: CURRENT STUDIO ===================== */
+
+    @Transactional(readOnly = true)
+    public List<DesignerResponse> listDesignersForCurrentStudio() {
+        // 1) current HAIR_STUDIO → studioId
+        UUID studioId = getStudioIdFromCurrentStudio();
+
+        // 2) Shu studiodagi barcha designerlar
+        List<DesignerDetail> designers =
+                designerRepository.findAllActiveByHairStudioIdOrderByUpdatedDesc(studioId);
+
+        // 3) Har bir designer uchun User + portfolio + daysOff / status / fullName ...
+        List<DesignerResponse> result = new ArrayList<>();
+
+        for (DesignerDetail d : designers) {
+            User user = userRepository.findById(d.getUserId()).orElse(null);
+            var items = portfolioRepo
+                    .findAllByDesignerIdAndDeletedAtIsNullOrderByCreatedAtAsc(d.getId())
+                    .stream()
+                    .map(it -> new PortfolioItemRes(it.getId(), it.getImageUrl(), it.getCaption()))
+                    .toList();
+
+            result.add(mapToRes(d, user, items));
+        }
+        return result;
+    }
+
     /* ===================== Helpers ===================== */
+
     private void ensureStudioRole() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        boolean ok = auth != null && auth.getAuthorities() != null &&
-                auth.getAuthorities().stream().anyMatch(a -> "ROLE_HAIR_STUDIO".equals(a.getAuthority()));
-        if (!ok) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only studio can perform this action");
+        boolean ok = auth != null
+                && auth.getAuthorities() != null
+                && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_HAIR_STUDIO".equals(a.getAuthority()));
+
+        if (!ok) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only studio can perform this action");
+        }
     }
 
     private UUID getCurrentUserIdOrThrow() {
@@ -246,7 +299,9 @@ public class DesignerService extends BaseService<DesignerDetail> {
     private UUID getStudioIdFromCurrentStudio() {
         UUID ownerUserId = getCurrentUserIdOrThrow();
         var list = hairStudioRepo.findActiveByUserIdOrderByUpdatedDesc(ownerUserId, PageRequest.of(0, 1));
-        if (list.isEmpty()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for this user");
+        if (list.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for this user");
+        }
         return list.get(0).getId();
     }
 
@@ -255,25 +310,40 @@ public class DesignerService extends BaseService<DesignerDetail> {
         // DS-ABCDE-12345
         String letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 5; i++) sb.append(letters.charAt(RND.nextInt(letters.length())));
+        for (int i = 0; i < 5; i++) {
+            sb.append(letters.charAt(RND.nextInt(letters.length())));
+        }
         int digits = 10000 + RND.nextInt(90000);
         return "DS-" + sb + "-" + digits;
     }
 
     private DesignerResponse mapToRes(DesignerDetail d, User user, List<PortfolioItemRes> items) {
+
+        Role effectiveRole = (user != null && user.getRole() != null)
+                ? user.getRole()
+                : Role.DESIGNER;
+
+        String fullName = user != null ? user.getFullName() : null;
+        String phone    = user != null ? user.getPhone()    : null;
+
         return new DesignerResponse(
                 d.getId(),
                 d.getUserId(),
                 d.getHairStudioId(),
                 d.getIdForLogin(),
-                user != null ? Role.valueOf(user.getPhone()) : null,
-                user != null ? String.valueOf(user.getRole()) : null,
+
+                effectiveRole,
+                fullName,
+                phone,
+
                 d.getPosition(),
+                d.getStatus(),
+                d.getDaysOff(),
+
                 d.getBio(),
                 items,
                 d.getCreatedAt(),
                 d.getUpdatedAt()
         );
     }
-
 }
