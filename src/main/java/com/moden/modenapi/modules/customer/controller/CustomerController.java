@@ -2,8 +2,12 @@ package com.moden.modenapi.modules.customer.controller;
 
 import com.moden.modenapi.common.enums.CouponStatus;
 import com.moden.modenapi.common.enums.PointType;
+import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.utils.CurrentUserUtil;
+import com.moden.modenapi.modules.consultation.dto.ConsultationRes;
+import com.moden.modenapi.modules.consultation.dto.CustomerMemoUpdateReq;
+import com.moden.modenapi.modules.consultation.service.ConsultationService;
 import com.moden.modenapi.modules.coupon.dto.CustomerCouponRes;
 import com.moden.modenapi.modules.coupon.service.CustomerCouponService;
 import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
@@ -16,15 +20,22 @@ import com.moden.modenapi.modules.point.service.PointService;
 import com.moden.modenapi.modules.qa.dto.QACreateRequest;
 import com.moden.modenapi.modules.qa.dto.QAResponse;
 import com.moden.modenapi.modules.qa.service.QAService;
+import com.moden.modenapi.modules.reservation.dto.ReservationCreateRequest;
+import com.moden.modenapi.modules.reservation.dto.ReservationResponse;
+import com.moden.modenapi.modules.reservation.dto.ReservationUpdateRequest;
+import com.moden.modenapi.modules.reservation.service.ReservationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +50,118 @@ public class CustomerController {
     private final CustomerCouponService customerCouponService;
     private final PointService pointService;
     private final QAService qaService;
+    private final ReservationService reservationService;
+    private final ConsultationService consultationService;
+
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Reservation yaratish (customer tomonidan)")
+    @PostMapping("/reservation/create")
+    public ResponseEntity<ResponseMessage<ReservationResponse>> create(
+            @RequestBody ReservationCreateRequest request
+    ) {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        ReservationResponse response = reservationService.createForCustomer(currentUserId, request);
+        return ResponseEntity.ok(ResponseMessage.success("Reservation created.", response));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Customer o'z reservationini o'zgartirishi")
+    @PutMapping("/reservation/update/{id}")
+    public ResponseEntity<ResponseMessage<ReservationResponse>> updateMyReservation(
+            @PathVariable UUID id,
+            @RequestBody ReservationUpdateRequest request
+    ) {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        ReservationResponse response = reservationService.updateByCustomer(currentUserId, id, request);
+        return ResponseEntity.ok(ResponseMessage.success("My reservation updated.", response));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Customer o'z reservationini bekor qilishi")
+    @PostMapping("/reservation/{id}/cancel")
+    public ResponseEntity<ResponseMessage<ReservationResponse>> cancelMyReservation(
+            @PathVariable UUID id
+    ) {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        ReservationResponse response = reservationService.cancelByCustomer(currentUserId, id);
+        return ResponseEntity.ok(ResponseMessage.success("My reservation canceled.", response));
+    }
+
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Mening reservationlarim (current customer)")
+    @GetMapping("/reservation/list")
+    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> myReservations() {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        List<ReservationResponse> list = reservationService.listByCustomer(currentUserId);
+        return ResponseEntity.ok(ResponseMessage.success("My reservations fetched.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Mening reservationlarim (status bo‘yicha)")
+    @GetMapping("/reservation/list/status")
+    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> myReservationsByStatus(
+            @RequestParam ReservationStatus status
+    ) {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        List<ReservationResponse> list = reservationService.listForCustomerByStatus(currentUserId, status);
+        return ResponseEntity.ok(ResponseMessage.success("My reservations by status fetched.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Mening reservationlarim (vaqt oralig'i bo‘yicha)")
+    @GetMapping("/reservation/range")
+    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> myReservationsRange(
+            @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime from,
+            @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime to
+    ) {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        List<ReservationResponse> list = reservationService.listForCustomerRange(currentUserId, from, to);
+        return ResponseEntity.ok(ResponseMessage.success("My reservations in range fetched.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Mening kunlik reservationlarim")
+    @GetMapping("/reservation/daily")
+    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> myReservationsDaily(
+            @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate date    // masalan: 2025-11-20
+    ) {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        List<ReservationResponse> list = reservationService.listForCustomerDaily(currentUserId, date);
+        return ResponseEntity.ok(ResponseMessage.success("My daily reservations fetched.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Mening haftalik reservationlarim")
+    @GetMapping("/reservation/weekly")
+    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> myReservationsWeekly(
+            @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate dateInWeek   // shu haftadagi har qanday sana
+    ) {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        List<ReservationResponse> list = reservationService.listForCustomerWeekly(currentUserId, dateInWeek);
+        return ResponseEntity.ok(ResponseMessage.success("My weekly reservations fetched.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Mening oylik reservationlarim")
+    @GetMapping("/reservation/monthly")
+    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> myReservationsMonthly(
+            @RequestParam int year,
+            @RequestParam int month
+    ) {
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        List<ReservationResponse> list = reservationService.listForCustomerMonthly(currentUserId, year, month);
+        return ResponseEntity.ok(ResponseMessage.success("My monthly reservations fetched.", list));
+    }
 
 
     @PreAuthorize("hasRole('CUSTOMER')")
@@ -68,7 +191,6 @@ public class CustomerController {
                 ResponseMessage.success("My active point summary", summary)
         );
     }
-
 
     @PreAuthorize("hasRole('CUSTOMER')")
     @Operation(summary = "Mening kuponlarim", description = "customer_coupon jadvalidan, shu customerga tegishli kuponlar ro'yxati")
@@ -136,6 +258,86 @@ public class CustomerController {
         UUID userId = CurrentUserUtil.currentUserId();
         var res = qaService.getForCustomer(userId, qaId);
         return ResponseEntity.ok(ResponseMessage.success("Inquiry detail", res));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(
+            summary = "내 상담 전체 목록 조회",
+            description = "현재 로그인한 고객 기준으로 모든 상담 목록을 조회합니다."
+    )
+    @GetMapping("/consultation/list")
+    public ResponseEntity<ResponseMessage<List<ConsultationRes>>> listConsultation() {
+        UUID customerId = CurrentUserUtil.currentUserId();
+        List<ConsultationRes> list = consultationService.listForCustomerAll(customerId);
+        return ResponseEntity.ok(ResponseMessage.success("내 상담 전체 목록 조회가 완료되었습니다.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(
+            summary = "오늘 상담 목록 조회 (내 것만)",
+            description = "오늘 날짜에 해당하는 예약에 연결된 상담 목록을 조회합니다."
+    )
+    @GetMapping("/consultation/list/today")
+    public ResponseEntity<ResponseMessage<List<ConsultationRes>>> listToday() {
+        UUID customerId = CurrentUserUtil.currentUserId();
+        List<ConsultationRes> list = consultationService.listForCustomerToday(customerId);
+        return ResponseEntity.ok(ResponseMessage.success("오늘 상담 목록 조회가 완료되었습니다.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(
+            summary = "이번 주 상담 목록 조회 (내 것만)",
+            description = "이번 주(월~일)에 해당하는 예약에 연결된 상담 목록을 조회합니다."
+    )
+    @GetMapping("/consultation/list/weekly")
+    public ResponseEntity<ResponseMessage<List<ConsultationRes>>> listThisWeek() {
+        UUID customerId = CurrentUserUtil.currentUserId();
+        List<ConsultationRes> list = consultationService.listForCustomerThisWeek(customerId);
+        return ResponseEntity.ok(ResponseMessage.success("이번 주 상담 목록 조회가 완료되었습니다.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(
+            summary = "이번 달 상담 목록 조회 (내 것만)",
+            description = "이번 달에 해당하는 예약에 연결된 상담 목록을 조회합니다."
+    )
+    @GetMapping("/consultation/list/monthly")
+    public ResponseEntity<ResponseMessage<List<ConsultationRes>>> listThisMonth() {
+        UUID customerId = CurrentUserUtil.currentUserId();
+        List<ConsultationRes> list = consultationService.listForCustomerThisMonth(customerId);
+        return ResponseEntity.ok(ResponseMessage.success("이번 달 상담 목록 조회가 완료되었습니다.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(
+            summary = "서비스별 상담 목록 조회 (내 것만)",
+            description = "현재 로그인한 고객 기준으로, 특정 서비스(시술) ID에 해당하는 상담 목록을 조회합니다."
+    )
+    @GetMapping("/consultation/list/by-service")
+    public ResponseEntity<ResponseMessage<List<ConsultationRes>>> listByService(
+            @RequestParam UUID serviceId
+    ) {
+        UUID customerId = CurrentUserUtil.currentUserId();
+        List<ConsultationRes> list = consultationService.listForCustomerByService(customerId, serviceId);
+        return ResponseEntity.ok(ResponseMessage.success("서비스별 상담 목록 조회가 완료되었습니다.", list));
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(
+            summary = "내 상담에 고객 메모 작성/수정",
+            description = """
+                    고객 본인이 소유한 상담에 대해 customerMemo(내 메모)를 작성/수정합니다.
+                    - body에 customerMemo 만 전달하면 됩니다.
+                    - 해당 상담이 내 예약이 아니면 403(FORBIDDEN)이 반환됩니다.
+                    """)
+    @PatchMapping("/consultation/create/{consultationId}/memo")
+    public ResponseEntity<ResponseMessage<ConsultationRes>> updateCustomerMemo(
+            @PathVariable UUID consultationId,
+            @RequestBody CustomerMemoUpdateReq request
+    ) {
+        UUID customerId = CurrentUserUtil.currentUserId();
+        ConsultationRes res = consultationService.updateCustomerMemo(customerId, consultationId, request);
+        return ResponseEntity.ok(ResponseMessage.success("고객 메모가 저장되었습니다.", res));
     }
 
 }
