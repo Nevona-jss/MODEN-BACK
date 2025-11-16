@@ -1,6 +1,7 @@
 package com.moden.modenapi.modules.designer.repository;
 
 import com.moden.modenapi.common.repository.BaseRepository;
+import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.designer.model.DesignerDetail;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -38,5 +39,13 @@ public interface DesignerDetailRepository extends BaseRepository<DesignerDetail,
     order by coalesce(d.updatedAt, d.createdAt) desc
 """)
     List<DesignerDetail> findAllActiveByHairStudioIdOrderByUpdatedDesc(@Param("studioId") UUID studioId);
+
+    @Query("""
+    select u
+    from User u
+    where u.role = 'DESIGNER'
+      and (u.fullName like concat('%', :keyword, '%'))
+""")
+    List<User> searchDesigners(@Param("keyword") String keyword);
 
 }

@@ -3,6 +3,7 @@ package com.moden.modenapi.modules.reservation.controller;
 import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.utils.CurrentUserUtil;
+import com.moden.modenapi.modules.payment.service.PaymentService;
 import com.moden.modenapi.modules.reservation.dto.ReservationCreateRequest;
 import com.moden.modenapi.modules.reservation.dto.ReservationResponse;
 import com.moden.modenapi.modules.reservation.dto.ReservationUpdateRequest;
@@ -27,6 +28,7 @@ import java.util.UUID;
 public class ReservationController {
 
     private final ReservationService reservationService;
+    private final PaymentService paymentService;
 
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "예약 생성")
@@ -40,6 +42,7 @@ public class ReservationController {
                 ResponseMessage.success("예약이 생성되었습니다.", response)
         );
     }
+
 
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "예약 단건 조회 (ID 기준)")

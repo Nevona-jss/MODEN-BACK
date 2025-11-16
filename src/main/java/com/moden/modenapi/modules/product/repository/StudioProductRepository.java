@@ -24,4 +24,16 @@ public interface StudioProductRepository extends BaseRepository<StudioProduct, U
         return findByIdAndDeletedAtIsNull(id);
     }
 
+    // 상품명에서 검색
+    List<StudioProduct> findByStudioIdAndProductNameContainingIgnoreCase(
+            UUID studioId,
+            String keyword
+    );
+
+    // 비고(notes)에서 검색
+    List<StudioProduct> findByStudioIdAndNotesContainingIgnoreCase(
+            UUID studioId,
+            String keyword
+    );
+
 }

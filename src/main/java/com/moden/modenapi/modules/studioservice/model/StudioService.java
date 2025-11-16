@@ -1,15 +1,12 @@
 package com.moden.modenapi.modules.studioservice.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.enums.ServiceType;
 import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter

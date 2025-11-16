@@ -2,6 +2,7 @@ package com.moden.modenapi.modules.reservation.service;
 
 import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.service.BaseService;
+import com.moden.modenapi.modules.payment.service.PaymentService;
 import com.moden.modenapi.modules.reservation.dto.ReservationCreateRequest;
 import com.moden.modenapi.modules.reservation.dto.ReservationResponse;
 import com.moden.modenapi.modules.reservation.dto.ReservationUpdateRequest;
@@ -13,8 +14,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -27,11 +26,13 @@ import java.util.UUID;
 public class ReservationService extends BaseService<Reservation> {
 
     private final ReservationRepository reservationRepository;
+    private final PaymentService paymentService;
 
     @Override
     protected JpaRepository<Reservation, UUID> getRepository() {
         return reservationRepository;
     }
+
 
     // ---------- CREATE (현재 로그인된 고객 기준) ----------
 
@@ -61,7 +62,13 @@ public class ReservationService extends BaseService<Reservation> {
                 .status(ReservationStatus.RESERVED)
                 .build();
 
+        // 1) 예약 저장
         Reservation saved = reservationRepository.save(entity);
+
+        // 2) ✅ 예약 기준으로 UNPAID payment 자동 생성
+        paymentService.createUnpaidPaymentForReservation(saved);
+
+        // 3) 예약 DTO 리턴
         return toDto(saved);
     }
 
@@ -414,7 +421,12 @@ public class ReservationService extends BaseService<Reservation> {
 
     // ---------- Entity → DTO 변환 ----------
 
+
     private ReservationResponse toDto(Reservation r) {
+
+        // ✅ 예약에 연결된 payment 의 상태 조회
+        var paymentStatus = paymentService.getPaymentStatusByReservationId(r.getId());
+
         return new ReservationResponse(
                 r.getId(),
                 r.getCustomerId(),
@@ -423,6 +435,7 @@ public class ReservationService extends BaseService<Reservation> {
                 r.getReservationAt(),
                 r.getDescription(),
                 r.getStatus(),
+                paymentStatus,          // ✅ 여기 세팅
                 r.getCreatedAt(),
                 r.getUpdatedAt(),
                 r.getDeletedAt()

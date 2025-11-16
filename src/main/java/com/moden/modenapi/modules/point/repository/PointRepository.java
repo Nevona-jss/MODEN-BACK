@@ -13,6 +13,7 @@ import java.util.UUID;
 
 public interface PointRepository extends BaseRepository<Point, UUID> {
 
+    List<Point> findByUserId(UUID userId);
     // 🔹 전체 type별 (관리용)
     List<Point> findAllByTypeAndDeletedAtIsNull(PointType type);
 

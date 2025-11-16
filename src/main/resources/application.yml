@@ -1,6 +1,6 @@
 server:
   address: 0.0.0.0
-  port: ${PORT:8080}          # Default local port = 8080, serverda --server.port=5003 bilan override qilinadi
+  port: ${PORT:8080}
   servlet:
     context-path: /
 
@@ -31,7 +31,7 @@ spring:
   servlet:
     multipart:
       max-file-size: 20MB
-      max-request-size: 20MB
+
 
 # ✅ Swagger konfiguratsiyasi (springdoc)
 springdoc:
@@ -39,7 +39,7 @@ springdoc:
     enabled: true
     path: /v3/api-docs
   swagger-ui:
-    tagsSorter: alpha         # Tag’larni A–Z bo‘yicha tartiblaydi
+    tagsSorter: alpha
     operationsSorter: alpha
     enabled: true
     path: /docs
@@ -48,7 +48,6 @@ springdoc:
   paths-to-match: /**
   default-produces-media-type: application/json
 
-# ✅ Log sozlamalari
 logging:
   level:
     root: INFO
@@ -59,26 +58,20 @@ logging:
     ansi:
       enabled: ALWAYS
 
-# ✅ Fayl yuklash (localda va serverda)
 file:
-  # Local (Windows/Linux)
   upload-dir: /home/hyona/IdeaProjects/MODEN/uploads
-  # Serverda avtomatik ravishda port bilan to‘liq URL hosil qiladi
   base-url: http://localhost:${server.port}/uploads
 
-# ✅ JWT konfiguratsiyasi
 app:
   jwt:
     secret: ${JWT_SECRET}
-    access-expiration-ms: 86400000       # 1 kun
-    refresh-expiration-ms: 2592000000    # 30 kun
+    access-expiration-ms: 86400000
+    refresh-expiration-ms: 2592000000
 
-# ✅ Firebase sozlamalari (Render yoki serverda environment orqali o‘qiladi)
 firebase:
   credentials:
     base64: ${FIREBASE_SA_BASE64:}
 
-# ✅ Qo‘shimcha: CORS uchun server domainlar
 cors:
   allowed-origins:
     - "http://localhost:5173"

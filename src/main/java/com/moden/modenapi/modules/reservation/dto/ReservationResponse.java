@@ -1,6 +1,7 @@
 package com.moden.modenapi.modules.reservation.dto;
 
 import com.moden.modenapi.common.enums.ReservationStatus;
+import com.moden.modenapi.common.enums.PaymentStatus;   // ✅ 추가
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
@@ -33,6 +34,12 @@ public record ReservationResponse(
                 implementation = ReservationStatus.class
         )
         ReservationStatus status,
+
+        @Schema(
+                description = "결제 상태 (UNPAID / PAID)",
+                implementation = PaymentStatus.class
+        )
+        PaymentStatus paymentStatus,
 
         @Schema(description = "생성 시각 (감사 로그)")
         Instant createdAt,
