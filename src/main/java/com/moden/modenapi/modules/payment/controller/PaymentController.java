@@ -57,11 +57,11 @@ public class PaymentController {
     }
 
     // ============================
-    // [1] 내 스튜디오 결제 목록 조회
+    // [1] 내 스튜디오 결제 목록 조회 (동적 필터)
     // ============================
     @PreAuthorize("hasRole('HAIR_STUDIO')")
     @Operation(summary = "내 스튜디오 결제 목록 조회 (필터: 날짜, 서비스 타입, 디자이너, 상태)")
-    @GetMapping("/filter")
+    @GetMapping("/list")
     public ResponseEntity<ResponseMessage<List<PaymentRes>>> listPayments(
             @RequestParam(required = false) UUID designerId,
             @RequestParam(required = false) ServiceType serviceType,
@@ -95,7 +95,6 @@ public class PaymentController {
 
     // ============================
     // [2] 내 스튜디오 기준 디자이너별 팁 합계 조회
-    //  - designerId 안 받음 (전체 디자이너 요약)
     // ============================
     @PreAuthorize("hasRole('HAIR_STUDIO')")
     @Operation(summary = "내 스튜디오 기준 디자이너별 팁 합계 조회")
@@ -113,7 +112,6 @@ public class PaymentController {
         LocalDateTime from = (fromDate != null) ? fromDate.atStartOfDay() : null;
         LocalDateTime to = (toDate != null) ? toDate.plusDays(1).atStartOfDay() : null;
 
-        // service 층에서 studioId 기준 + (필요하면 PAID만) 디자이너별 tip 합계 계산
         List<DesignerTipSummaryRes> list = paymentService.studioDesignerTipSummary(
                 studioId,
                 null,   // designerId 필터 없음 (전체)
@@ -139,42 +137,6 @@ public class PaymentController {
 
         return ResponseEntity.ok(
                 ResponseMessage.success("오늘 매출 요약 조회가 완료되었습니다.", summary)
-        );
-    }
-
-    // ============================
-    // [4] PAID(결제 완료) 상태 결제 목록 조회
-    //  - studioId, designerId 둘 다 안 받는다
-    //  - 현재 스튜디오 기준 + PAID 고정
-    // ============================
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
-    @Operation(summary = "내 스튜디오 PAID(결제 완료) 상태 결제 목록 조회")
-    @GetMapping("/list/paid")
-    public ResponseEntity<ResponseMessage<List<PaymentRes>>> listPaidPayments(
-            @RequestParam(required = false) ServiceType serviceType,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate fromDate,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate toDate
-    ) {
-        UUID studioId = CurrentUserUtil.currentUserId();   // 🔹 로그인된 스튜디오
-
-        LocalDateTime from = (fromDate != null) ? fromDate.atStartOfDay() : null;
-        LocalDateTime to = (toDate != null) ? toDate.plusDays(1).atStartOfDay() : null;
-
-        List<PaymentRes> list = paymentService.searchPaymentsForList(
-                studioId,
-                null,                 // designerId 필터 없음
-                serviceType,
-                PaymentStatus.PAID,   // 🔴 항상 PAID
-                from,
-                to
-        );
-
-        return ResponseEntity.ok(
-                ResponseMessage.success("PAID 상태 결제 목록 조회가 완료되었습니다.", list)
         );
     }
 }

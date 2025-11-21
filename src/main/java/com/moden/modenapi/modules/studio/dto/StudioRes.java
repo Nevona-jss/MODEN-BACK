@@ -28,13 +28,10 @@ public record StudioRes(
         String studioPhone,
         String address,
         String description,
-        String profileImageUrl,
         String logoImageUrl,
         String bannerImageUrl,
-        String instagramUrl,
         String naverUrl,
         String kakaoUrl,
-        String parkingInfo,
         BigDecimal latitude,
         BigDecimal longitude
 ) {}

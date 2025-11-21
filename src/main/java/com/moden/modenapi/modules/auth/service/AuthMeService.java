@@ -51,13 +51,10 @@ public class AuthMeService {
                         s.getStudioPhone(),
                         s.getAddress(),
                         s.getDescription(),
-                        s.getProfileImageUrl(),
                         s.getLogoImageUrl(),
                         s.getBannerImageUrl(),
-                        s.getInstagramUrl(),
                         s.getNaverUrl(),
                         s.getKakaoUrl(),
-                        s.getParkingInfo(),
                         s.getLatitude(),
                         s.getLongitude()
                 );
@@ -76,7 +73,6 @@ public class AuthMeService {
                 String phone    = (u != null) ? u.getPhone()    : null;
 
                 return new DesignerResponse(
-                        d.getId(),                 // id
                         d.getUserId(),             // userId
                         d.getHairStudioId(),       // studioId
                         d.getIdForLogin(),         // idForLogin
@@ -89,7 +85,6 @@ public class AuthMeService {
                         d.getStatus(),             // status
                         d.getDaysOff(),            // daysOff
 
-                        d.getBio(),                // bio
                         Collections.emptyList(),   // portfolio (bu yerda portfolioni yuklamaymiz)
 
                         d.getCreatedAt(),          // createdAt

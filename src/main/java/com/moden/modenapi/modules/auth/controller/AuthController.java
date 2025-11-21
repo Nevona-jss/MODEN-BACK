@@ -44,7 +44,6 @@ public class AuthController {
     private final AuthMeService authMeService;
 
 
-    /** ✅ 하나의 엔드포인트: ADMIN이면 기본 프로필, 그 외엔 detail object만 반환 */
     @GetMapping("/me")
     public ResponseEntity<ResponseMessage<?>> me() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
@@ -73,10 +72,7 @@ public class AuthController {
         // Body → faqat AT va meta (RT ni body’da yubormaymiz)
         Map<String, Object> body = Map.of(
                 "accessToken", out.accessToken(),
-                "role",        out.role(),
-                "userId",      out.userId().toString(),
-                "entityId",    out.entityId().toString(),
-                "idForLogin",  out.idForLogin()
+                "refreshToken", out.refreshToken()
         );
         return ResponseEntity.ok(ResponseMessage.success("Login successful", body));
     }
@@ -90,10 +86,19 @@ public class AuthController {
             HttpServletResponse response
     ) {
         var tokens = authService.signInByNameAndPhone(req);
+
+        // Existing cookie setting
         CookieUtil.setRefreshTokenCookie(response, request, tokens.refreshToken());
-        Map<String, String> data = Map.of("accessToken", tokens.accessToken());
+
+        // TEMP: Return both tokens for testing
+        Map<String, String> data = Map.of(
+                "accessToken", tokens.accessToken(),
+                "refreshToken", tokens.refreshToken()
+        );
+
         return ResponseEntity.ok(ResponseMessage.success("Login successful", data));
     }
+
 
     @GetMapping("/refresh")
     public ResponseEntity<ResponseMessage<Map<String, String>>> refresh(

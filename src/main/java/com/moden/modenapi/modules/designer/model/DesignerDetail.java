@@ -34,9 +34,6 @@ public class DesignerDetail extends BaseEntity {
     @Column(length = 50, unique = true)
     private String idForLogin;
 
-    @Column(length = 1000)
-    private String bio;
-
     @Enumerated(EnumType.STRING)
     private Position position = Position.DESIGNER;
 

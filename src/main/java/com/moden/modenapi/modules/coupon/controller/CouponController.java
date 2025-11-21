@@ -27,7 +27,7 @@ import java.util.UUID;
 public class CouponController {
 
     private final CouponService couponService;
-    private final CustomerCouponService customerCouponService;   // ✅ 추가
+    private final CustomerCouponService customerCouponService;
 
     // ----------------------------------------------------------------------
     // CREATE (policy)
@@ -35,7 +35,9 @@ public class CouponController {
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Create coupon")
     @PostMapping("/create")
-    public ResponseEntity<ResponseMessage<CouponResponse>> create(@Valid @RequestBody CouponCreateRequest req) {
+    public ResponseEntity<ResponseMessage<CouponResponse>> create(
+            @Valid @RequestBody CouponCreateRequest req
+    ) {
         var created = couponService.create(req);
         return ResponseEntity.ok(
                 ResponseMessage.success("Coupon successfully created.", created)
@@ -63,34 +65,39 @@ public class CouponController {
     // ----------------------------------------------------------------------
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @GetMapping("/get/{id}")
+    @Operation(summary = "Get coupon detail by ID")
     public ResponseEntity<ResponseMessage<CouponResponse>> get(@PathVariable UUID id) {
         var res = couponService.get(id);
         return ResponseEntity.ok(ResponseMessage.success("Coupon fetched.", res));
     }
 
     // ----------------------------------------------------------------------
-    // LIST BY STUDIO (policy)
+    // LIST (policy) - bitta /list, ichida status bo‘yicha filter
     // ----------------------------------------------------------------------
     @GetMapping("/list")
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
-    @Operation(summary = "Studio bo‘yicha barcha kupon policy-lari")
-    public ResponseEntity<ResponseMessage<List<CouponResponse>>> listByStudio() {
-        UUID currentUserId = CurrentUserUtil.currentUserId();  // USER ID
-        var list = couponService.listByStudioForCurrentUser(currentUserId);
-        return ResponseEntity.ok(ResponseMessage.success("Studio coupons fetched.", list));
-    }
-
-    // ----------------------------------------------------------------------
-    // LIST BY STUDIO + STATUS (policy)
-    // ----------------------------------------------------------------------
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
-    @Operation(summary = "Studio kupon policy-lari (status bo‘yicha)")
-    @GetMapping("/filter")
-    public ResponseEntity<ResponseMessage<List<CouponResponse>>> listByStudioAndStatus(
+    @Operation(
+            summary = "Studio coupon policy list (with optional status filter)",
+            description = """
+                    현재 로그인한 스튜디오 기준 쿠폰 정책 목록을 조회합니다.
+                    - status 파라미터가 없으면 전체
+                    - status 파라미터가 있으면 해당 상태의 쿠폰만 조회
+                    """
+    )
+    public ResponseEntity<ResponseMessage<List<CouponResponse>>> listByStudio(
             @RequestParam(required = false) CouponStatus status
     ) {
-        UUID currentUserId = CurrentUserUtil.currentUserId();
-        var list = couponService.listByStudioAndStatusForCurrentUser(currentUserId, status);
+        UUID currentUserId = CurrentUserUtil.currentUserId();  // USER ID
+
+        List<CouponResponse> list;
+        if (status == null) {
+            // 🔹 status berilmasa – barcha policy
+            list = couponService.listByStudioForCurrentUser(currentUserId);
+        } else {
+            // 🔹 status berilgan bo‘lsa – status bo‘yicha filter
+            list = couponService.listByStudioAndStatusForCurrentUser(currentUserId, status);
+        }
+
         return ResponseEntity.ok(
                 ResponseMessage.success("Studio coupons fetched.", list)
         );
@@ -98,6 +105,7 @@ public class CouponController {
 
     // ----------------------------------------------------------------------
     // STUDIO: 특정 userId(customer)의 쿠폰 리스트 보기
+    //  (이건 policy가 아니라 실제 발급된 customer_coupon 기준이므로 별도 유지)
     // ----------------------------------------------------------------------
     @PreAuthorize("hasRole('HAIR_STUDIO')")
     @Operation(
@@ -108,7 +116,7 @@ public class CouponController {
     public ResponseEntity<ResponseMessage<List<CustomerCouponRes>>> listCustomerCoupons(
             @PathVariable("userId") UUID customerUserId
     ) {
-        var list = customerCouponService.listCouponsForCustomerUser(customerUserId); // ✅ 존재하는 메서드 사용
+        var list = customerCouponService.listCouponsForCustomerUser(customerUserId);
         return ResponseEntity.ok(
                 ResponseMessage.success("Customer coupons for this studio", list)
         );

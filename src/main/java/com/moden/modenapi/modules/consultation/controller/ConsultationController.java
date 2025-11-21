@@ -12,12 +12,14 @@ import com.moden.modenapi.modules.consultation.service.ConsultationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -106,12 +108,6 @@ public class ConsultationController {
         return ResponseEntity.ok(ResponseMessage.success("예약 기준 상담 조회가 완료되었습니다.", res));
     }
 
-    // ----------------------------------------
-    //  상담 수정 (JSON 기반 – URL/메모 수정)
-    // ----------------------------------------
-    // ----------------------------------------
-//  상담 수정 (multipart/form-data – 이미지/메모 수정)
-// ----------------------------------------
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
             summary = "상담 수정 (이미지 업로드 포함)"
@@ -162,20 +158,46 @@ public class ConsultationController {
         return ResponseEntity.ok(ResponseMessage.success("상담 정보가 수정되었습니다.", res));
     }
 
-
     // ----------------------------------------
-    //  상담 상태별 목록 (스튜디오/관리자용)
-    // ----------------------------------------
+//  상담 목록 (스튜디오/관리자/디자이너용) - 동적 필터
+// ----------------------------------------
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
-            summary = "상담 상태별 목록 조회",
-            description = "상담 상태(예: PENDING=상담대기, COMPLETED=상담완료 등) 기준으로 전체 상담 목록을 조회합니다."
+            summary = "상담 목록 조회 (필터 포함)",
+            description = """
+                상담 상태 및 예약/고객 정보를 기준으로 동적 조회.
+                - status      : PENDING / COMPLETED ...
+                - designerId  : 예약 디자이너 ID
+                - customerId  : 예약 고객 ID
+                - serviceId   : 시술(서비스) ID
+                - fromDate/toDate : 예약일시 기준 날짜 범위 (YYYY-MM-DD)
+                아무 파라미터도 안 주면 전체 상담(soft delete 제외)을 반환합니다.
+                """
     )
-    @GetMapping("/list/status")
-    public ResponseEntity<ResponseMessage<List<ConsultationRes>>> listByStatus(
-            @RequestParam ConsultationStatus status
+    @GetMapping("/list")
+    public ResponseEntity<ResponseMessage<List<ConsultationRes>>> list(
+            @RequestParam(required = false) ConsultationStatus status,
+            @RequestParam(required = false) UUID designerId,
+            @RequestParam(required = false) UUID customerId,
+            @RequestParam(required = false) UUID serviceId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate fromDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate toDate
     ) {
-        List<ConsultationRes> list = consultationService.listByStatus(status);
-        return ResponseEntity.ok(ResponseMessage.success("상태별 상담 목록 조회가 완료되었습니다.", list));
+        List<ConsultationRes> list = consultationService.searchForStaff(
+                designerId,
+                customerId,
+                serviceId,
+                status,
+                fromDate,
+                toDate
+        );
+        return ResponseEntity.ok(
+                ResponseMessage.success("상담 목록 조회가 완료되었습니다.", list)
+        );
     }
+
 }

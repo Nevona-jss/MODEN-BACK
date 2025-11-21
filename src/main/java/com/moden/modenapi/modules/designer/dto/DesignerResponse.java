@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.UUID;
 
 public record DesignerResponse(
-        UUID id,              // designer_detail.id
         UUID userId,          // user.id
         UUID studioId,        // hair_studio_id
         String idForLogin,    // DS-XXXXX-12345
@@ -23,7 +22,6 @@ public record DesignerResponse(
         DesignerStatus status,// WORKING / LEAVE ...
         List<Weekday> daysOff,// 쉬는 요일 리스트
 
-        String bio,                   // 소개
         List<PortfolioItemRes> portfolio, // 포트폴리오
         Instant createdAt,
         Instant updatedAt

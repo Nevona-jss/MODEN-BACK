@@ -149,16 +149,31 @@ public class ConsultationService extends BaseService<Consultation> {
         return toRes(consultation, reservation);
     }
 
-    // ---------------------------
-    //  상태별 상담 목록 (스튜디오/관리자용)
-    // ---------------------------
     @Transactional(readOnly = true)
-    public List<ConsultationRes> listByStatus(ConsultationStatus status) {
-        List<Consultation> consultations = consultationRepository.findByStatus(status);
+    public List<ConsultationRes> searchForStaff(
+            UUID designerId,
+            UUID customerId,
+            UUID serviceId,
+            ConsultationStatus status,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        LocalDateTime from = (fromDate != null) ? fromDate.atStartOfDay() : null;
+        LocalDateTime to   = (toDate != null) ? toDate.plusDays(1).atStartOfDay() : null;
+
+        List<Consultation> consultations = consultationRepository.searchDynamicForStaff(
+                designerId,
+                customerId,
+                serviceId,
+                status,
+                from,
+                to
+        );
+
+        // 이미 있는 공통 mapper 활용
         return toResListWithReservations(consultations);
     }
-
-    // ---------------------------
+// ---------------------------
     //  디자이너별 상담 목록 (Reservation.designerId 기준)
     // ---------------------------
     @Transactional(readOnly = true)
@@ -186,76 +201,33 @@ public class ConsultationService extends BaseService<Consultation> {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<ConsultationRes> listForCustomerFiltered(
+            UUID customerId,
+            UUID serviceId,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        LocalDateTime from = (fromDate != null) ? fromDate.atStartOfDay() : null;
+        LocalDateTime to   = (toDate != null) ? toDate.plusDays(1).atStartOfDay() : null;
+
+        // 1) Customer + serviceId + from/to bo‘yicha Consultation larni olib kelamiz
+        List<Consultation> consultations = consultationRepository.searchDynamicForCustomer(
+                customerId,
+                serviceId,
+                from,
+                to
+        );
+
+        // 2) Mavjud umumiy mapper: Consultation + Reservation → ConsultationRes
+        //    (ichida reservationlarni findAllById qilib map tuzadi)
+        return toResListWithReservations(consultations);
+    }
+
+
     // ========================================================
     //  👤 고객 전용: 내 상담 목록 / 필터
     // ========================================================
-
-    /** 현재 고객의 모든 상담 목록 */
-    @Transactional(readOnly = true)
-    public List<ConsultationRes> listForCustomerAll(UUID customerId) {
-        List<Reservation> reservations = reservationRepository.findByCustomerId(customerId);
-        if (reservations.isEmpty()) return List.of();
-
-        Map<UUID, Reservation> reservationMap = reservations.stream()
-                .collect(Collectors.toMap(Reservation::getId, r -> r));
-        List<UUID> reservationIds = reservations.stream()
-                .map(Reservation::getId)
-                .toList();
-
-        List<Consultation> consultations =
-                consultationRepository.findByReservationIdIn(reservationIds);
-
-        return consultations.stream()
-                .map(c -> {
-                    Reservation r = reservationMap.get(c.getReservationId());
-                    return toRes(c, r);
-                })
-                .toList();
-    }
-
-    /** 오늘 상담 목록 (고객 기준) */
-    @Transactional(readOnly = true)
-    public List<ConsultationRes> listForCustomerToday(UUID customerId) {
-        LocalDate today = LocalDate.now();
-        LocalDateTime start = today.atStartOfDay();
-        LocalDateTime end = today.plusDays(1).atStartOfDay();
-
-        List<Reservation> reservations = reservationRepository
-                .findByCustomerIdAndReservationAtBetween(customerId, start, end);
-        return mapConsultationsByReservations(reservations);
-    }
-
-    /** 이번 주 상담 목록 (고객 기준) */
-    @Transactional(readOnly = true)
-    public List<ConsultationRes> listForCustomerThisWeek(UUID customerId) {
-        LocalDate any = LocalDate.now();
-        int dayOfWeek = any.getDayOfWeek().getValue(); // 1=Mon ... 7=Sun
-        LocalDate monday = any.minusDays(dayOfWeek - 1L);
-        LocalDate nextMonday = monday.plusWeeks(1);
-
-        LocalDateTime start = monday.atStartOfDay();
-        LocalDateTime end = nextMonday.atStartOfDay();
-
-        List<Reservation> reservations = reservationRepository
-                .findByCustomerIdAndReservationAtBetween(customerId, start, end);
-        return mapConsultationsByReservations(reservations);
-    }
-
-    /** 이번 달 상담 목록 (고객 기준) */
-    @Transactional(readOnly = true)
-    public List<ConsultationRes> listForCustomerThisMonth(UUID customerId) {
-        LocalDate now = LocalDate.now();
-        YearMonth ym = YearMonth.of(now.getYear(), now.getMonthValue());
-        LocalDate firstDay = ym.atDay(1);
-        LocalDate firstDayNextMonth = ym.plusMonths(1).atDay(1);
-
-        LocalDateTime start = firstDay.atStartOfDay();
-        LocalDateTime end = firstDayNextMonth.atStartOfDay();
-
-        List<Reservation> reservations = reservationRepository
-                .findByCustomerIdAndReservationAtBetween(customerId, start, end);
-        return mapConsultationsByReservations(reservations);
-    }
 
     /** 서비스별 필터 (현재 고객 + 특정 서비스 ID) */
     @Transactional(readOnly = true)

@@ -102,80 +102,37 @@ public class DesignerController {
         return ResponseEntity.ok(ResponseMessage.success("Designer reservation canceled.", response));
     }
 
-
     @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Designerga tegishli barcha reservationlar")
+    @Operation(summary = "현재 로그인한 디자이너 자신의 예약 목록 (필터 포함)")
     @GetMapping("/reservations/list")
-    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listReservations() {
-        UUID designerId = CurrentUserUtil.currentUserId();
-        List<ReservationResponse> list = reservationService.listForDesignerAll(designerId);
-        return ResponseEntity.ok(ResponseMessage.success("Designer reservations fetched.", list));
-    }
+    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listReservations(
 
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Designer reservationlari (status bo‘yicha)")
-    @GetMapping("/reservations/list/status")
-    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listReservationsByStatus(
-            @RequestParam ReservationStatus status
-    ) {
-        UUID designerId = CurrentUserUtil.currentUserId();
-        List<ReservationResponse> list = reservationService.listForDesignerByStatus(designerId, status);
-        return ResponseEntity.ok(ResponseMessage.success("Designer reservations by status fetched.", list));
-    }
+            @RequestParam(required = false)
+            ReservationStatus status,
 
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Dizaynerning ma'lum vaqt oralig'idagi reservationlari")
-    @GetMapping("/reservations/range")
-    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listRangedReservations(
-            @RequestParam
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime from,
-            @RequestParam
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime to
-    ) {
-        UUID designerId = CurrentUserUtil.currentUserId();
-        List<ReservationResponse> list = reservationService.listForDesignerRange(designerId, from, to);
-        return ResponseEntity.ok(ResponseMessage.success("Designer reservations in range fetched.", list));
-    }
-
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Current designer – kunlik reservationlar")
-    @GetMapping("/reservations/daily")
-    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listDailyReservations(
-            @RequestParam
+            @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate date   // misol: 2025-11-20
-    ) {
-        UUID designerId = CurrentUserUtil.currentUserId();
-        List<ReservationResponse> list = reservationService.listForDesignerDaily(designerId, date);
-        return ResponseEntity.ok(ResponseMessage.success("Designer daily reservations fetched.", list));
-    }
+            LocalDate fromDate,
 
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Current designer – haftalik reservationlar")
-    @GetMapping("/reservations/weekly")
-    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listWeeklyReservations(
-            @RequestParam
+            @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate anyDateInWeek   // shu haftadagi har qanday sana
+            LocalDate toDate
     ) {
+        // 🔹 항상 현재 로그인한 디자이너 기준
         UUID designerId = CurrentUserUtil.currentUserId();
-        List<ReservationResponse> list = reservationService.listForDesignerWeekly(designerId, anyDateInWeek);
-        return ResponseEntity.ok(ResponseMessage.success("Designer weekly reservations fetched.", list));
+
+        List<ReservationResponse> list = reservationService.listForDesignerFiltered(
+                designerId,
+                status,
+                fromDate,
+                toDate
+        );
+
+        return ResponseEntity.ok(
+                ResponseMessage.success("Designer reservations fetched.", list)
+        );
     }
 
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Current designer – oylik reservationlar")
-    @GetMapping("/reservations/monthly")
-    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listMonthlyReservations(
-            @RequestParam int year,   // 2025
-            @RequestParam int month   // 1~12
-    ) {
-        UUID designerId = CurrentUserUtil.currentUserId();
-        List<ReservationResponse> list = reservationService.listForDesignerMonthly(designerId, year, month);
-        return ResponseEntity.ok(ResponseMessage.success("Designer monthly reservations fetched.", list));
-    }
 
     // ----------------------------------------
     //  디자이너 본인 상담 목록 (디자이너/스튜디오용)
@@ -185,6 +142,7 @@ public class DesignerController {
             summary = "디자이너 본인 상담 목록 조회",
             description = "현재 로그인한 디자이너에게 배정된 예약들을 기준으로 상담 목록을 조회합니다."
     )
+
     @GetMapping("/consultation/list")
     public ResponseEntity<ResponseMessage<List<ConsultationRes>>> listForDesignerMe() {
         UUID designerId = CurrentUserUtil.currentUserId();

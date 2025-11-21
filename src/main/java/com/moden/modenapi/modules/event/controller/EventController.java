@@ -34,16 +34,37 @@ public class EventController {
     private final EventService eventService;
     private final ImageUploadService  imageUploadService;
 
-    // 🔹 GET ALL (현재 로그인한 studio 기준)
+    // ============================================================
+    // LIST + FILTER (현재 로그인한 studio 기준)
+    //  - title(또는 description) 키워드
+    //  - fromDate / toDate (이벤트 기간이 이 구간과 겹치는 것만)
+    //  - 파라미터를 하나도 안 주면 = 해당 스튜디오의 모든 활성 이벤트
+    // ============================================================
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
-    @Operation(summary = "Get all events for current salon (studio)")
+    @Operation(summary = "현재 스튜디오 이벤트 목록 + 필터 (title, fromDate, toDate)")
     @GetMapping("/list")
-    public ResponseEntity<ResponseMessage<List<EventRes>>> getAllForCurrentStudio() {
+    public ResponseEntity<ResponseMessage<List<EventRes>>> listForCurrentStudio(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate fromDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate toDate
+    ) {
 
-        UUID studioId = CurrentUserUtil.currentUserId();  // ✅ 로그인된 사용자 → studioId 로 사용
-        List<EventRes> events = eventService.getAllByStudio(studioId);
+        UUID studioId = CurrentUserUtil.currentUserId();  // ✅ 로그인된 사용자 → studioId
 
-        return ResponseEntity.ok(ResponseMessage.success("Event list retrieved", events));
+        List<EventRes> events = eventService.searchForStudio(
+                studioId,
+                keyword,
+                fromDate,
+                toDate
+        );
+
+        return ResponseEntity.ok(
+                ResponseMessage.success("Event list retrieved", events)
+        );
     }
 
     // 🔹 GET ONE (현재 studio 권한 체크 포함)

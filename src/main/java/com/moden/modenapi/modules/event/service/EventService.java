@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -84,6 +85,54 @@ public class EventService extends BaseService<Event> {
         Event event = getEventAndCheckStudio(studioId, eventId);
         event.setDeletedAt(Instant.now());
         update(event);
+    }
+    // ============================================================
+    // LIST + FILTER for current studio
+    //  - keyword: title / description 에 포함 여부
+    //  - fromDate / toDate: 이벤트 기간이 이 날짜 구간과 겹치는지 여부
+    //  - DB 쿼리 단순화를 위해 우선 studioId 기준 active 이벤트 가져온 뒤, 메모리에서 필터
+    //    (나중에 필요하면 QueryDSL/Specification 등으로 최적화)
+    // ============================================================
+    @Transactional(readOnly = true)
+    public List<EventRes> searchForStudio(
+            UUID studioId,
+            String keyword,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        // 기존 getAllByStudio(studioId)를 대체
+        List<Event> baseList = eventRepository.findAllActiveByStudioId(studioId);
+
+        return baseList.stream()
+                .filter(e -> {
+                    // 1) keyword filter (title + description)
+                    if (keyword != null && !keyword.isBlank()) {
+                        String k = keyword.toLowerCase();
+                        String title = e.getTitle() != null ? e.getTitle().toLowerCase() : "";
+                        String desc = e.getDescription() != null ? e.getDescription().toLowerCase() : "";
+                        if (!title.contains(k) && !desc.contains(k)) {
+                            return false;
+                        }
+                    }
+
+                    // 2) date filter (기간이 [fromDate, toDate] 와 겹치는지)
+                    if (fromDate != null) {
+                        // event의 endDate가 fromDate보다 이전이면 제외
+                        if (e.getEndDate() != null && e.getEndDate().isBefore(fromDate)) {
+                            return false;
+                        }
+                    }
+                    if (toDate != null) {
+                        // event의 startDate가 toDate보다 이후면 제외
+                        if (e.getStartDate() != null && e.getStartDate().isAfter(toDate)) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                })
+                .map(this::mapToRes)
+                .collect(Collectors.toList());
     }
 
     // 🔹 GET ALL by Studio

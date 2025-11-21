@@ -11,6 +11,7 @@ import com.moden.modenapi.modules.coupon.dto.CouponResponse;
 import com.moden.modenapi.modules.coupon.service.CouponService;
 import com.moden.modenapi.modules.coupon.service.CustomerCouponService;
 import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
+import com.moden.modenapi.modules.customer.dto.CustomerResponse;
 import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
@@ -31,8 +32,9 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.List;
-import java.util.UUID;
+import java.time.ZoneId;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -272,8 +274,14 @@ public class CustomerService extends BaseService<CustomerDetail> {
                 ));
     }
 
+
+
     @Transactional(readOnly = true)
-    public List<CustomerDetail> listStudioCustomers() {
+    public List<CustomerResponse> listStudioCustomers(
+            String keyword,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
         UUID ownerUserId = CurrentUserUtil.currentUserId();
 
         var studios = studioRepo.findActiveByUserIdOrderByUpdatedDesc(
@@ -284,7 +292,75 @@ public class CustomerService extends BaseService<CustomerDetail> {
         }
         UUID studioId = studios.get(0).getId();
 
-        return customerRepo.findAllByStudioId(studioId);
+        var customers = customerRepo.findAllByStudioId(studioId);
+        if (customers.isEmpty()) {
+            return List.of();
+        }
+
+        // Load User info
+        List<UUID> userIds = customers.stream()
+                .map(CustomerDetail::getUserId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        Map<UUID, User> userMap = userRepo.findAllById(userIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        return customers.stream()
+                .filter(c -> {
+                    // keyword filter
+                    if (keyword != null && !keyword.isBlank()) {
+                        String k = keyword.toLowerCase();
+
+                        User u = userMap.get(c.getUserId());
+                        String name = Optional.ofNullable(u != null ? u.getFullName() : "").orElse("").toLowerCase();
+                        String phone = Optional.ofNullable(u != null ? u.getPhone() : "").orElse("").toLowerCase();
+
+                        if (!name.contains(k) && !phone.contains(k)) {
+                            return false;
+                        }
+                    }
+
+                    // date filter
+                    if (fromDate != null || toDate != null) {
+                        if (c.getCreatedAt() == null) return false;
+
+                        LocalDate createdDate = c.getCreatedAt()
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalDate();
+
+                        if (fromDate != null && createdDate.isBefore(fromDate)) return false;
+                        if (toDate != null && createdDate.isAfter(toDate)) return false;
+                    }
+
+                    return true;
+                })
+                .map(c -> {
+                    User u = userMap.get(c.getUserId());
+
+                    return new CustomerResponse(
+                            c.getId(),
+                            // 🔹 FROM USER
+                            u != null ? u.getFullName() : null,
+                            u != null ? u.getPhone() : null,
+                            u != null ? u.getRole() : null,
+
+                            // 🔹 FROM CUSTOMER DETAIL
+                            c.getEmail(),
+                            c.getGender(),
+                            c.getBirthdate(),
+                            c.getAddress(),
+                            c.getProfileImageUrl(),
+
+                            // 🔹 CustomerDetail qo‘shimcha maydonlari
+                            c.getVisitReason(),
+                            c.isConsentMarketing(),
+                            c.getDesignerId(),
+                            c.getStudioId()
+                    );
+                })
+                .toList();
     }
 
 

@@ -68,13 +68,10 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
         if (req.studioPhone()  != null) s.setStudioPhone(req.studioPhone());
         if (req.address()      != null) s.setAddress(req.address());
         if (req.description()  != null) s.setDescription(req.description());
-        if (req.parkingInfo()  != null) s.setParkingInfo(req.parkingInfo());
 
         if (req.logoImageUrl()    != null) s.setLogoImageUrl(req.logoImageUrl());
         if (req.bannerImageUrl()  != null) s.setBannerImageUrl(req.bannerImageUrl());
-        if (req.profileImageUrl() != null) s.setProfileImageUrl(req.profileImageUrl());
 
-        if (req.instagram() != null) s.setInstagramUrl(req.instagram());
         if (req.naver()     != null) s.setNaverUrl(req.naver());
         if (req.kakao()     != null) s.setKakaoUrl(req.kakao());
 
@@ -96,13 +93,10 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
                 s.getStudioPhone(),
                 s.getAddress(),
                 s.getDescription(),
-                s.getProfileImageUrl(),
                 s.getLogoImageUrl(),
                 s.getBannerImageUrl(),
-                s.getInstagramUrl(),
                 s.getNaverUrl(),
                 s.getKakaoUrl(),
-                s.getParkingInfo(),
                 s.getLatitude(),
                 s.getLongitude()
         );

@@ -4,7 +4,6 @@ import com.moden.modenapi.common.enums.Position;
 import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.service.FileStorageService;
 import com.moden.modenapi.common.utils.IdGenerator;
-import com.moden.modenapi.modules.auth.dto.AuthResponse;
 import com.moden.modenapi.modules.auth.model.AuthLocal;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.AuthLocalRepository;
@@ -14,7 +13,6 @@ import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
-import com.moden.modenapi.security.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -37,7 +35,6 @@ public class AdminService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
-    private final JwtProvider jwtProvider;
     private final HairStudioDetailRepository hairStudioDetailRepository;
 
     @Value("${file.upload-dir:/home/hyona/IdeaProjects/MODEN/uploads}")
@@ -119,13 +116,10 @@ public class AdminService {
                 .studioPhone(null)
                 .address(null)
                 .description(null)
-                .parkingInfo(null)
-                .instagramUrl(null)
                 .naverUrl(null)
                 .kakaoUrl(null)
                 .logoImageUrl(logoUrl)
                 .bannerImageUrl(bannerUrl)
-                .profileImageUrl(profileUrl)
                 .latitude(null)
                 .longitude(null)
                 .position(Position.STUDIO_OWNER)
@@ -146,13 +140,10 @@ public class AdminService {
                 studio.getStudioPhone(),
                 studio.getAddress(),
                 studio.getDescription(),
-                studio.getProfileImageUrl(),
                 studio.getLogoImageUrl(),
                 studio.getBannerImageUrl(),
-                studio.getInstagramUrl(),
                 studio.getNaverUrl(),
                 studio.getKakaoUrl(),
-                studio.getParkingInfo(),
                 studio.getLatitude(),
                 studio.getLongitude()
         );
@@ -186,13 +177,10 @@ public class AdminService {
         if (req.studioPhone() != null)     s.setStudioPhone(req.studioPhone());
         if (req.address() != null)         s.setAddress(req.address());
         if (req.description() != null)     s.setDescription(req.description());
-        if (req.parkingInfo() != null)     s.setParkingInfo(req.parkingInfo());
 
         if (req.logoImageUrl() != null)    s.setLogoImageUrl(req.logoImageUrl());
         if (req.bannerImageUrl() != null)  s.setBannerImageUrl(req.bannerImageUrl());
-        if (req.profileImageUrl() != null) s.setProfileImageUrl(req.profileImageUrl());
 
-        if (req.instagram() != null)       s.setInstagramUrl(req.instagram());
         if (req.naver() != null)           s.setNaverUrl(req.naver());
         if (req.kakao() != null)           s.setKakaoUrl(req.kakao());
 
@@ -208,9 +196,9 @@ public class AdminService {
                 owner != null ? owner.getFullName() : null,
                 owner != null ? owner.getPhone()    : null,
                 s.getIdForLogin(), s.getBusinessNo(), s.getOwnerName(), s.getStudioPhone(),
-                s.getAddress(), s.getDescription(), s.getProfileImageUrl(), s.getLogoImageUrl(),
-                s.getBannerImageUrl(), s.getInstagramUrl(), s.getNaverUrl(), s.getKakaoUrl(),
-                s.getParkingInfo(), s.getLatitude(), s.getLongitude()
+                s.getAddress(), s.getDescription(),  s.getLogoImageUrl(),
+                s.getBannerImageUrl(),  s.getNaverUrl(), s.getKakaoUrl(),
+                s.getLatitude(), s.getLongitude()
         );
     }
 
@@ -265,13 +253,10 @@ public class AdminService {
                 s.getStudioPhone(),
                 s.getAddress(),
                 s.getDescription(),
-                s.getProfileImageUrl(),
                 s.getLogoImageUrl(),
                 s.getBannerImageUrl(),
-                s.getInstagramUrl(),
                 s.getNaverUrl(),
                 s.getKakaoUrl(),
-                s.getParkingInfo(),
                 s.getLatitude(),
                 s.getLongitude()
         );

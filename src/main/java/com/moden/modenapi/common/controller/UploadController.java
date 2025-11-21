@@ -6,97 +6,141 @@ import com.moden.modenapi.common.utils.FileNameUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
+
 @Tag(name = "IMAGE UPLOAD", description = "Universal image uploader")
 @RestController
-@RequestMapping("/api/universalUploads")
+@RequestMapping("/api/upload")
 @RequiredArgsConstructor
 public class UploadController {
 
-    @Value("${file.upload-dir:uploads/services}")
-    private String uploadRoot; // e.g. /home/hyona/IdeaProjects/MODEN/uploads
+    // application.yml:
+    // file:
+    //   upload-dir: uploads
+    @Value("${file.upload-dir:uploads}")
+    private String uploadRoot; // e.g. /home/.../uploads
 
     @Operation(
-            summary = "Universal uploads (images)",
+            summary = "Image upload (single or multiple)",
             description = """
-            Multipart upload for images.
-            - form field: file
-            - optional query: folder (default: misc)
-            Returns public URL and relative path to save in DB.
+            Universal image upload endpoint.
+            - Single: form field name = file
+            - Multiple: form field name = files (array)
+            Response: List<UploadResponse> (even for single file)
+            All files are stored directly under /uploads.
             """
     )
-    @PreAuthorize("isAuthenticated()")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ResponseMessage<UploadResponse>> upload(
-            @RequestPart("file") MultipartFile file,
-            @RequestParam(value = "folder", defaultValue = "misc") String folder
+    public ResponseEntity<ResponseMessage<List<UploadResponse>>> uploadUniversal(
+            @RequestPart(value = "file", required = false) MultipartFile file,
+            @RequestPart(value = "files", required = false) List<MultipartFile> files
     ) throws Exception {
 
-        if (file == null || file.isEmpty()) {
-            return ResponseEntity.badRequest().body(ResponseMessage.failure("File is empty"));
+        List<MultipartFile> targetFiles = new ArrayList<>();
+
+        // 단일 업로드(file)도 List에 합치기
+        if (file != null && !file.isEmpty()) {
+            targetFiles.add(file);
         }
 
-        // sanitize folder (letters, numbers, dash, underscore, slash)
-        folder = sanitizeFolder(folder);
-        if (!StringUtils.hasText(folder)) folder = "misc";
+        // 다중 업로드(files)도 추가
+        if (files != null) {
+            for (MultipartFile f : files) {
+                if (f != null && !f.isEmpty()) {
+                    targetFiles.add(f);
+                }
+            }
+        }
+
+        if (targetFiles.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(ResponseMessage.failure("No files provided"));
+        }
+
+        List<UploadResponse> results = new ArrayList<>();
+        for (MultipartFile f : targetFiles) {
+            UploadResponse res = processAndSaveImage(f);
+            results.add(res);
+        }
+
+        return ResponseEntity.status(201)
+                .body(ResponseMessage.success("Uploaded", results));
+    }
+
+    // ============================
+    //  🔽 common image + compress
+    // ============================
+    private UploadResponse processAndSaveImage(MultipartFile file) throws Exception {
 
         // content-type guard (allow only images)
         String ct = Objects.toString(file.getContentType(), "");
         if (!ct.startsWith("image/")) {
             // (optional) try probe
-            String probed = Files.probeContentType(Path.of(Objects.requireNonNullElse(file.getOriginalFilename(), "file")));
+            String probed = Files.probeContentType(
+                    Path.of(Objects.requireNonNullElse(file.getOriginalFilename(), "file"))
+            );
             if (probed == null || !probed.startsWith("image/")) {
-                return ResponseEntity.badRequest().body(ResponseMessage.failure("Only image uploads are allowed"));
+                throw new IllegalArgumentException("Only image uploads are allowed");
             }
             ct = probed;
         }
 
+        // ⏱ unique file name (time + random + original ext)
         Instant now = Instant.now();
         String generated = FileNameUtil.generate(file.getOriginalFilename(), now);
-        String datePart  = FileNameUtil.datePartition(now); // yyyy/MM/dd
 
-        // Build safe absolute path and ensure it stays inside root
+        // root directory: faqat bitta papka (uploadRoot)
         Path root = Paths.get(uploadRoot).toAbsolutePath().normalize();
-        Path dir  = root.resolve(folder).resolve(datePart).normalize();
-        if (!dir.startsWith(root)) {
-            return ResponseEntity.badRequest().body(ResponseMessage.failure("Invalid folder path"));
+        if (!Files.exists(root)) {
+            Files.createDirectories(root);
         }
-        Files.createDirectories(dir);
 
-        Path dst = dir.resolve(generated).normalize();
+        Path dst = root.resolve(generated).normalize();
         if (!dst.startsWith(root)) {
-            return ResponseEntity.badRequest().body(ResponseMessage.failure("Invalid target path"));
+            throw new IllegalArgumentException("Invalid target path");
         }
 
-        file.transferTo(dst.toFile());
+        // 🔻 IMAGE COMPRESS + SAVE
+        String format = "jpg";
+        if ("image/png".equalsIgnoreCase(ct)) {
+            format = "png";
+        } else if ("image/webp".equalsIgnoreCase(ct)) {
+            // Thumbnailator webp 지원이 애매해서 안전하게 jpg로 변환
+            format = "jpg";
+            ct = "image/jpeg";
+        } else {
+            ct = "image/jpeg";
+        }
 
-        String relPath = folder + "/" + datePart + "/" + generated;   // store in DB
-        String url     = "/uploads/" + relPath;                        // public URL
+        try (InputStream in = file.getInputStream()) {
+            Thumbnails.of(in)
+                    .size(1920, 1920)       // maksimal kenglik 1920px
+                    .outputFormat(format)
+                    .outputQuality(0.7f)    // web uchun ideal
+                    .toFile(dst.toFile());
+        }
 
-        var body = new UploadResponse(url, relPath, generated, file.getSize(), ct);
-        return ResponseEntity.status(201).body(ResponseMessage.success("Uploaded", body));
-    }
 
-    private String sanitizeFolder(String folder) {
-        if (!StringUtils.hasText(folder)) return "misc";
-        // keep alnum, _, -, / ; collapse others to _
-        folder = folder.replaceAll("[^a-zA-Z0-9_\\-/]", "_");
-        // remove any ".." sequences defensively
-        folder = folder.replace("..", "");
-        // trim leading slashes
-        while (folder.startsWith("/")) folder = folder.substring(1);
-        return folder;
+        long compressedSize = Files.size(dst);
+
+        String relPath = generated;               // DB 저장용
+        String url     = "/uploads/" + generated; // static resource 매핑 필요
+
+        return new UploadResponse(url, relPath, generated, compressedSize, ct);
     }
 }

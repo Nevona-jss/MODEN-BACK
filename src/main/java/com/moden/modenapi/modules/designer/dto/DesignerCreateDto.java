@@ -3,19 +3,14 @@ package com.moden.modenapi.modules.designer.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.moden.modenapi.common.enums.DesignerStatus;
 import com.moden.modenapi.common.enums.Position;
-import com.moden.modenapi.common.enums.Weekday;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
 import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record DesignerCreateDto(
-
-        @JsonProperty("bio")
-        String bio,
 
         @JsonProperty("portfolioUrl")
         String portfolioUrl,

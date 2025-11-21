@@ -130,7 +130,6 @@ public class DesignerService extends BaseService<DesignerDetail> {
                 .userId(user.getId())
                 .hairStudioId(studioId)
                 .idForLogin(loginCode)
-                .bio(req.bio())
                 .position(req.position() != null ? req.position() : Position.DESIGNER)
                 .status(req.status() != null ? req.status() : DesignerStatus.WORKING)
                 .portfolioItemIds(new ArrayList<>())
@@ -161,8 +160,6 @@ public class DesignerService extends BaseService<DesignerDetail> {
 
         DesignerDetail d = designerRepository.findByUserIdAndDeletedAtIsNull(currentUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Designer not found"));
-
-        if (req.bio() != null) d.setBio(req.bio());
 
         if (req.phone() != null) {
             userRepository.findById(d.getUserId()).ifPresent(u -> {
@@ -246,29 +243,61 @@ public class DesignerService extends BaseService<DesignerDetail> {
     /* ===================== LIST: CURRENT STUDIO ===================== */
 
     @Transactional(readOnly = true)
-    public List<DesignerResponse> listDesignersForCurrentStudio() {
-        // 1) current HAIR_STUDIO → studioId
+    public List<DesignerResponse> listDesignersForCurrentStudio(
+            String keyword,
+            boolean onlyActive
+    ) {
+        // 1) current HAIR_STUDIO → studioId (sendagi util method)
         UUID studioId = getStudioIdFromCurrentStudio();
 
         // 2) Shu studiodagi barcha designerlar
         List<DesignerDetail> designers =
                 designerRepository.findAllActiveByHairStudioIdOrderByUpdatedDesc(studioId);
 
-        // 3) Har bir designer uchun User + portfolio + daysOff / status / fullName ...
+        if (designers.isEmpty()) {
+            return List.of();
+        }
+
         List<DesignerResponse> result = new ArrayList<>();
 
         for (DesignerDetail d : designers) {
+
+            // --- onlyActive: deletedAt == null ni active deb hisoblaymiz ---
+            if (onlyActive && d.getDeletedAt() != null) {
+                continue;
+            }
+
             User user = userRepository.findById(d.getUserId()).orElse(null);
+
             var items = portfolioRepo
                     .findAllByDesignerIdAndDeletedAtIsNullOrderByCreatedAtAsc(d.getId())
                     .stream()
                     .map(it -> new PortfolioItemRes(it.getId(), it.getImageUrl(), it.getCaption()))
                     .toList();
 
-            result.add(mapToRes(d, user, items));
+            DesignerResponse res = mapToRes(d, user, items);
+
+            // --- keyword filter (User.fullName / email / DesignerDetail.nickname ...) ---
+            if (keyword != null && !keyword.isBlank()) {
+                String k = keyword.toLowerCase();
+
+                String name = "";
+                String email = "";
+                if (user != null) {
+                    name  = Optional.ofNullable(user.getFullName()).orElse("").toLowerCase();
+                }
+
+                if (!name.contains(k) && !email.contains(k)) {
+                    continue;
+                }
+            }
+
+            result.add(res);
         }
+
         return result;
     }
+
 
     /* ===================== Helpers ===================== */
 
@@ -305,6 +334,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
         return list.get(0).getId();
     }
 
+
     private static final SecureRandom RND = new SecureRandom();
     private String generateDesignerLoginCode() {
         // DS-ABCDE-12345
@@ -327,7 +357,6 @@ public class DesignerService extends BaseService<DesignerDetail> {
         String phone    = user != null ? user.getPhone()    : null;
 
         return new DesignerResponse(
-                d.getId(),
                 d.getUserId(),
                 d.getHairStudioId(),
                 d.getIdForLogin(),
@@ -340,7 +369,6 @@ public class DesignerService extends BaseService<DesignerDetail> {
                 d.getStatus(),
                 d.getDaysOff(),
 
-                d.getBio(),
                 items,
                 d.getCreatedAt(),
                 d.getUpdatedAt()

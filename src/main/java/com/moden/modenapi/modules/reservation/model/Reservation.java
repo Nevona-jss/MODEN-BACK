@@ -1,5 +1,6 @@
 package com.moden.modenapi.modules.reservation.model;
 
+import com.moden.modenapi.common.enums.ConsultationStatus;
 import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
@@ -35,4 +36,9 @@ public class Reservation extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
     private ReservationStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "consultation_status")
+    @Builder.Default
+    private ConsultationStatus consultationStatus = ConsultationStatus.PENDING;
 }

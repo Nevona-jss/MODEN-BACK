@@ -44,23 +44,14 @@ public class HairStudioDetail extends BaseEntity {
     @Column(length = 500)
     private String bannerImageUrl;
 
-    @Column(length = 255)
-    private String profileImageUrl;
-
     @Lob
     private String description;
-
-    @Column(length = 200)
-    private String parkingInfo;
 
     @Column(length = 255)
     private String naverUrl;
 
     @Column(length = 255)
     private String kakaoUrl;
-
-    @Column(length = 255)
-    private String instagramUrl;
 
     @Enumerated(EnumType.STRING)
     private Position position = Position.STUDIO_OWNER;

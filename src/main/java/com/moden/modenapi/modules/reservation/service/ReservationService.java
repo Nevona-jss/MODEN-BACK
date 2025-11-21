@@ -9,14 +9,17 @@ import com.moden.modenapi.modules.reservation.dto.ReservationUpdateRequest;
 import com.moden.modenapi.modules.reservation.model.Reservation;
 import com.moden.modenapi.modules.reservation.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,9 +36,9 @@ public class ReservationService extends BaseService<Reservation> {
         return reservationRepository;
     }
 
-
-    // ---------- CREATE (현재 로그인된 고객 기준) ----------
-
+    // ----------------------------------------------------------------------
+    // CREATE (현재 로그인된 고객 기준)
+    // ----------------------------------------------------------------------
     public ReservationResponse createForCustomer(UUID customerId, ReservationCreateRequest req) {
 
         // 더블 예약 체크 (해당 디자이너 + 해당 시간 + 상태가 RESERVED 인 예약 존재 여부)
@@ -60,20 +63,22 @@ public class ReservationService extends BaseService<Reservation> {
                 .reservationAt(req.reservationAt())
                 .description(req.description())
                 .status(ReservationStatus.RESERVED)
+                // .consultationStatus(ConsultationStatus.WAITING) // 필요하면 기본값 세팅
                 .build();
 
         // 1) 예약 저장
         Reservation saved = reservationRepository.save(entity);
 
-        // 2) ✅ 예약 기준으로 UNPAID payment 자동 생성
+        // 2) 예약 기준으로 UNPAID payment 자동 생성
         paymentService.createUnpaidPaymentForReservation(saved);
 
         // 3) 예약 DTO 리턴
         return toDto(saved);
     }
 
-    // ---------- UPDATE (ID 기준 일반 수정) ----------
-
+    // ----------------------------------------------------------------------
+    // UPDATE (ID 기준 일반 수정)
+    // ----------------------------------------------------------------------
     public ReservationResponse update(UUID id, ReservationUpdateRequest req) {
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reservation not found: " + id));
@@ -83,12 +88,14 @@ public class ReservationService extends BaseService<Reservation> {
         if (req.serviceId() != null) reservation.setServiceId(req.serviceId());
         if (req.reservationAt() != null) reservation.setReservationAt(req.reservationAt());
         if (req.description() != null) reservation.setDescription(req.description());
+        // 필요하면 status / consultationStatus 도 여기서 반영
 
         return toDto(reservation);
     }
 
-    // ---------- 단건 조회 ----------
-
+    // ----------------------------------------------------------------------
+    // 단건 조회
+    // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     public ReservationResponse get(UUID id) {
         Reservation reservation = reservationRepository.findById(id)
@@ -96,68 +103,9 @@ public class ReservationService extends BaseService<Reservation> {
         return toDto(reservation);
     }
 
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> list() {
-        return reservationRepository.findAll().stream()
-                .map(this::toDto)   // 이미 아래에 있는 toDto() 재사용
-                .toList();
-    }
-
-
-
-
-    // ---------- 일간 / 주간 / 월간 전체 예약 조회 ----------
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listDaily(LocalDate date) {
-        LocalDateTime start = date.atStartOfDay();
-        LocalDateTime end = date.plusDays(1).atStartOfDay();
-
-        return reservationRepository.findByReservationAtBetween(start, end).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listWeekly(LocalDate anyDateInWeek) {
-        // 해당 날짜가 포함된 주의 월요일을 구한다
-        int dayOfWeek = anyDateInWeek.getDayOfWeek().getValue(); // 1=Mon ... 7=Sun
-        LocalDate monday = anyDateInWeek.minusDays(dayOfWeek - 1L);
-        LocalDate nextMonday = monday.plusWeeks(1);
-
-        LocalDateTime start = monday.atStartOfDay();
-        LocalDateTime end = nextMonday.atStartOfDay();
-
-        return reservationRepository.findByReservationAtBetween(start, end).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listMonthly(int year, int month) {
-        YearMonth ym = YearMonth.of(year, month);
-        LocalDate firstDay = ym.atDay(1);
-        LocalDate firstDayNextMonth = ym.plusMonths(1).atDay(1);
-
-        LocalDateTime start = firstDay.atStartOfDay();
-        LocalDateTime end = firstDayNextMonth.atStartOfDay();
-
-        return reservationRepository.findByReservationAtBetween(start, end).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-
-
-    // 1) 특정 고객의 모든 예약 목록
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listByCustomer(UUID customerId) {
-        return reservationRepository.findByCustomerId(customerId).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    // 2) 특정 디자이너의 모든 예약 목록
+    // ----------------------------------------------------------------------
+    // 특정 디자이너의 모든 예약 목록 (단순 리스트)
+    // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<ReservationResponse> listByDesigner(UUID designerId) {
         return reservationRepository.findByDesignerId(designerId).stream()
@@ -165,16 +113,9 @@ public class ReservationService extends BaseService<Reservation> {
                 .toList();
     }
 
-    // 4) 상태 기준 예약 목록 (예: RESERVED 만)
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listByStatus(ReservationStatus status) {
-        return reservationRepository.findByStatus(status).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    // ---------- 일반 취소 (ID 기준) ----------
-
+    // ----------------------------------------------------------------------
+    // 예약 취소 (관리자/공용)
+    // ----------------------------------------------------------------------
     public ReservationResponse cancel(UUID id) {
         Reservation reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -182,83 +123,13 @@ public class ReservationService extends BaseService<Reservation> {
                         "해당 ID의 예약을 찾을 수 없습니다: " + id
                 ));
 
-        // ✅ 상태를 자동으로 CANCELED 로 변경
         reservation.setStatus(ReservationStatus.CANCELED);
-
         return toDto(reservation);
     }
 
-    // ---------- 디자이너별 조회 (디자이너 본인 기준 ALL) ----------
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listForDesignerAll(UUID designerId) {
-        return reservationRepository.findByDesignerId(designerId).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listForDesignerByStatus(UUID designerId, ReservationStatus status) {
-        return reservationRepository.findByDesignerIdAndStatus(designerId, status).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listForDesignerRange(
-            UUID designerId,
-            LocalDateTime from,
-            LocalDateTime to
-    ) {
-        return reservationRepository
-                .findByDesignerIdAndReservationAtBetween(designerId, from, to).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listForDesignerDaily(UUID designerId, LocalDate date) {
-        LocalDateTime start = date.atStartOfDay();
-        LocalDateTime end = date.plusDays(1).atStartOfDay();
-
-        return reservationRepository
-                .findByDesignerIdAndReservationAtBetween(designerId, start, end).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listForDesignerWeekly(UUID designerId, LocalDate anyDateInWeek) {
-        int dayOfWeek = anyDateInWeek.getDayOfWeek().getValue(); // 1=Mon ... 7=Sun
-        LocalDate monday = anyDateInWeek.minusDays(dayOfWeek - 1L);
-        LocalDate nextMonday = monday.plusWeeks(1);
-
-        LocalDateTime start = monday.atStartOfDay();
-        LocalDateTime end = nextMonday.atStartOfDay();
-
-        return reservationRepository
-                .findByDesignerIdAndReservationAtBetween(designerId, start, end).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listForDesignerMonthly(UUID designerId, int year, int month) {
-        YearMonth ym = YearMonth.of(year, month);
-        LocalDate firstDay = ym.atDay(1);
-        LocalDate firstDayNextMonth = ym.plusMonths(1).atDay(1);
-
-        LocalDateTime start = firstDay.atStartOfDay();
-        LocalDateTime end = firstDayNextMonth.atStartOfDay();
-
-        return reservationRepository
-                .findByDesignerIdAndReservationAtBetween(designerId, start, end).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    // ---------- 고객 권한으로 본인 예약 수정/취소 ----------
-
+    // ----------------------------------------------------------------------
+    // 고객 권한으로 본인 예약 수정/취소
+    // ----------------------------------------------------------------------
     public ReservationResponse updateByCustomer(UUID customerId,
                                                 UUID reservationId,
                                                 ReservationUpdateRequest req) {
@@ -278,7 +149,6 @@ public class ReservationService extends BaseService<Reservation> {
         }
 
         if (req.customerId() != null) {
-            // 일반적으로 customerId 변경은 권장하지 않지만, 필요 시 허용 가능
             reservation.setCustomerId(req.customerId());
         }
         if (req.designerId() != null) reservation.setDesignerId(req.designerId());
@@ -307,8 +177,9 @@ public class ReservationService extends BaseService<Reservation> {
         return toDto(reservation);
     }
 
-    // ---------- 디자이너 권한으로 본인 예약 수정/취소 ----------
-
+    // ----------------------------------------------------------------------
+    // 디자이너 권한으로 본인 예약 수정/취소
+    // ----------------------------------------------------------------------
     public ReservationResponse updateByDesigner(UUID designerId,
                                                 UUID reservationId,
                                                 ReservationUpdateRequest req) {
@@ -332,7 +203,6 @@ public class ReservationService extends BaseService<Reservation> {
         if (req.reservationAt() != null) reservation.setReservationAt(req.reservationAt());
         if (req.description() != null) reservation.setDescription(req.description());
 
-        // customerId / designerId 는 디자이너 권한으로는 변경하지 않음
         return toDto(reservation);
     }
 
@@ -354,93 +224,148 @@ public class ReservationService extends BaseService<Reservation> {
         return toDto(reservation);
     }
 
-    /** 현재 고객 기준 - 상태별(RESERVED / CANCELED) 예약 목록 */
+    // ----------------------------------------------------------------------
+    // DYNAMIC SEARCH (pagination) – ✅ serviceId 포함
+    // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
-    public List<ReservationResponse> listForCustomerByStatus(UUID customerId, ReservationStatus status) {
-        return reservationRepository.findByCustomerIdAndStatus(customerId, status).stream()
-                .map(this::toDto)
-                .toList();
-    }
-
-    /** 현재 고객 기준 - 기간(from/to) 내 예약 목록 */
-    @Transactional(readOnly = true)
-    public List<ReservationResponse> listForCustomerRange(
+    public List<ReservationResponse> searchDynamic(
+            UUID designerId,
             UUID customerId,
-            LocalDateTime from,
-            LocalDateTime to
+            UUID serviceId,         // ✅ 추가
+            ReservationStatus status,
+            LocalDate fromDate,
+            LocalDate toDate,
+            Integer page,
+            Integer size
     ) {
-        return reservationRepository
-                .findByCustomerIdAndReservationAtBetween(customerId, from, to).stream()
+        LocalDateTime from = (fromDate != null) ? fromDate.atStartOfDay() : null;
+        LocalDateTime to   = (toDate != null) ? toDate.plusDays(1).atStartOfDay() : null;
+
+        int pageIndex = (page == null || page < 1) ? 0 : page - 1;   // client 1-based → 0-based
+        int pageSize  = (size == null || size < 1) ? 10 : size;      // default 10
+
+        Pageable pageable = PageRequest.of(
+                pageIndex,
+                pageSize,
+                Sort.by(Sort.Direction.DESC, "reservationAt")
+        );
+
+        return reservationRepository.searchDynamic(
+                        designerId,
+                        customerId,
+                        serviceId,     // ✅ repo 호출에도 포함
+                        status,
+                        from,
+                        to,
+                        pageable
+                )
+                .stream()
                 .map(this::toDto)
                 .toList();
     }
 
-    /** 현재 고객 기준 - 일별 예약 목록 */
+    // page/size 안 넘기는 기존 코드용 OVERLOAD – ✅ serviceId 포함
     @Transactional(readOnly = true)
-    public List<ReservationResponse> listForCustomerDaily(UUID customerId, LocalDate date) {
-        LocalDateTime start = date.atStartOfDay();
-        LocalDateTime end = date.plusDays(1).atStartOfDay();
-
-        return reservationRepository
-                .findByCustomerIdAndReservationAtBetween(customerId, start, end).stream()
-                .map(this::toDto)
-                .toList();
+    public List<ReservationResponse> searchDynamic(
+            UUID designerId,
+            UUID customerId,
+            UUID serviceId,
+            ReservationStatus status,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        return searchDynamic(designerId, customerId, serviceId, status, fromDate, toDate, 1, 10);
     }
 
-    /** 현재 고객 기준 - 주간 예약 목록 (해당 날짜가 포함된 주) */
+    // ----------------------------------------------------------------------
+    // DESIGNER FILTERED LIST
+    // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
-    public List<ReservationResponse> listForCustomerWeekly(UUID customerId, LocalDate anyDateInWeek) {
-        int dayOfWeek = anyDateInWeek.getDayOfWeek().getValue(); // 1=Mon ... 7=Sun
-        LocalDate monday = anyDateInWeek.minusDays(dayOfWeek - 1L);
-        LocalDate nextMonday = monday.plusWeeks(1);
-
-        LocalDateTime start = monday.atStartOfDay();
-        LocalDateTime end = nextMonday.atStartOfDay();
-
-        return reservationRepository
-                .findByCustomerIdAndReservationAtBetween(customerId, start, end).stream()
-                .map(this::toDto)
-                .toList();
+    public List<ReservationResponse> listForDesignerFiltered(
+            UUID designerId,
+            ReservationStatus status,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        return searchDynamic(
+                designerId,
+                null,          // customerId filter 없음
+                null,          // serviceId filter 없음
+                status,
+                fromDate,
+                toDate
+        );
     }
 
-    /** 현재 고객 기준 - 월별 예약 목록 (year + month) */
     @Transactional(readOnly = true)
-    public List<ReservationResponse> listForCustomerMonthly(UUID customerId, int year, int month) {
-        YearMonth ym = YearMonth.of(year, month);
-        LocalDate firstDay = ym.atDay(1);
-        LocalDate firstDayNextMonth = ym.plusMonths(1).atDay(1);
-
-        LocalDateTime start = firstDay.atStartOfDay();
-        LocalDateTime end = firstDayNextMonth.atStartOfDay();
-
-        return reservationRepository
-                .findByCustomerIdAndReservationAtBetween(customerId, start, end).stream()
-                .map(this::toDto)
-                .toList();
+    public List<ReservationResponse> listForDesignerFiltered(
+            UUID designerId,
+            ReservationStatus status,
+            LocalDate fromDate,
+            LocalDate toDate,
+            Integer page,
+            Integer size
+    ) {
+        return searchDynamic(
+                designerId,
+                null,
+                null,          // serviceId filter 없음
+                status,
+                fromDate,
+                toDate,
+                page,
+                size
+        );
     }
 
-    // ---------- Entity → DTO 변환 ----------
+    // ----------------------------------------------------------------------
+    // CUSTOMER FILTERED LIST
+    // ----------------------------------------------------------------------
+    @Transactional(readOnly = true)
+    public List<ReservationResponse> listForCustomerFiltered(
+            UUID customerId,
+            ReservationStatus status,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        return searchDynamic(
+                null,          // designerId filter 없음
+                customerId,
+                null,          // serviceId filter 없음
+                status,
+                fromDate,
+                toDate
+        );
+    }
 
-
+    // ----------------------------------------------------------------------
+    // ENTITY → DTO 변환
+    // ----------------------------------------------------------------------
     private ReservationResponse toDto(Reservation r) {
-
-        // ✅ 예약에 연결된 payment 의 상태 조회
         var paymentStatus = paymentService.getPaymentStatusByReservationId(r.getId());
+
+        String customerFullName = null;
+        String designerFullName = null;
+        String serviceName      = null;
+        String paymentId        = null;
 
         return new ReservationResponse(
                 r.getId(),
                 r.getCustomerId(),
+                customerFullName,
                 r.getDesignerId(),
-                r.getServiceId(),
+                designerFullName,
+                serviceName,
                 r.getReservationAt(),
                 r.getDescription(),
                 r.getStatus(),
-                paymentStatus,          // ✅ 여기 세팅
+                r.getConsultationStatus(),
+                paymentId,
+                paymentStatus,
                 r.getCreatedAt(),
                 r.getUpdatedAt(),
                 r.getDeletedAt()
         );
     }
-
 
 }

@@ -25,6 +25,10 @@ public record StudioUpdateReq(
         @Size(max = 50)
         String studioPhone,
 
+        @Schema(description = "Studio owner phone number", example = "010-5452-1223-4567")
+        @Size(max = 50)
+        String phone,
+
         @Schema(description = "Studio address", example = "Seoul, Gangnam-gu, Teheran-ro 123")
         @Size(max = 255)
         String address,
@@ -41,16 +45,7 @@ public record StudioUpdateReq(
         @Size(max = 500)
         String bannerImageUrl,
 
-        @Schema(description = "Profile image URL (small avatar)")
-        @Size(max = 500)
-        String profileImageUrl,
-
         // socials
-        @Schema(description = "Instagram URL", example = "https://instagram.com/moden_hair")
-        @Size(max = 255)
-        @Pattern(regexp = "^(https?://)?(www\\.)?instagram\\.com/.*$", message = "Invalid Instagram URL format")
-        String instagram,
-
         @Schema(description = "Naver URL", example = "https://naver.me/modenhair")
         @Size(max = 255)
         @Pattern(regexp = "^(https?://)?(www\\.)?naver\\.(com|me)/.*$", message = "Invalid Naver URL format")
@@ -61,9 +56,6 @@ public record StudioUpdateReq(
         @Pattern(regexp = "^(https?://)?(pf\\.kakao\\.com|open\\.kakao\\.com)/.*$", message = "Invalid Kakao URL format")
         String kakao,
 
-        @Schema(description = "Parking information", example = "Free parking available in basement")
-        @Size(max = 200)
-        String parkingInfo,
 
         // geo
         @Schema(description = "Latitude", example = "37.5665")
