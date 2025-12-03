@@ -1,14 +1,19 @@
 package com.moden.modenapi.modules.studio.service;
 
 import com.moden.modenapi.common.service.BaseService;
+import com.moden.modenapi.common.utils.HtmlSanitizerUtil;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
+import com.moden.modenapi.modules.studio.dto.StudioBirthdayCouponRequest;
+import com.moden.modenapi.modules.studio.dto.StudioPrivacyPolicyRequest;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import lombok.RequiredArgsConstructor;
+import org.jsoup.Jsoup;
+import org.jsoup.safety.Safelist;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -31,7 +36,6 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
 
     private final HairStudioDetailRepository studioRepository;
     private final UserRepository userRepo;
-    private final CustomerDetailRepository  customerRepo;
 
     @Override
     protected HairStudioDetailRepository getRepository() {
@@ -58,10 +62,6 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
         if (s.getDeletedAt() != null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Studio deleted");
         }
-
-        // ⛔️ READ-ONLY on /me (these fields are NOT in StudioMeUpdateReq anyway)
-        // - businessNo
-        // - fullName (User)
 
         // ✅ Editable (all optional)
         if (req.ownerName() != null) {s.setOwnerName(req.ownerName());}
@@ -102,8 +102,6 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
         );
     }
 
-    
-
     public UUID getCurrentUserId() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "No auth");
@@ -114,5 +112,59 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
         } catch (Exception e) {
             throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid principal");
         }
+    }
+
+
+    private HairStudioDetail getStudioByUserIdOrThrow(UUID userId) {
+        return studioRepository.findByUserId(userId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Studio not found for userId=" + userId)
+                );
+    }
+
+     /**
+     * 1) Tug'ilgan kun kupon setting
+     */
+    public void updateBirthdayCouponSettings(UUID userId, StudioBirthdayCouponRequest req) {
+        HairStudioDetail studio = getStudioByUserIdOrThrow(userId);
+
+        studio.setBirthdayCouponEnabled(req.birthdayCouponEnabled());
+        studio.setBirthdayCouponDescription(req.birthdayCouponDescription());
+
+        studioRepository.save(studio);
+    }
+
+    /**
+     * 2) 개인정보/보안 안내 HTML
+     */
+    public void updatePrivacyPolicyHtml(UUID userId, StudioPrivacyPolicyRequest req) {
+        HairStudioDetail studio = getStudioByUserIdOrThrow(userId);
+
+        String safeHtml = HtmlSanitizerUtil.sanitizePrivacyHtml(req.privacyPolicyHtml());
+        studio.setPrivacyPolicyHtml(safeHtml);
+
+        studioRepository.save(studio);
+    }
+    // ✏️ privacyPolicyHtml ni yangilash misoli
+    public void updatePrivacyPolicyHtml(UUID studioId, String rawHtml) {
+        HairStudioDetail studio = studioRepository.findByUserId(studioId)
+                .orElseThrow(() -> new IllegalArgumentException("Studio not found"));
+
+        String safeHtml = sanitizePrivacyHtml(rawHtml);
+        studio.setPrivacyPolicyHtml(safeHtml);
+
+        studioRepository.save(studio);
+    }
+
+    // 🔒 HTML sanitizatsiya metodi – aynan shu yerda bo‘ladi
+    private String sanitizePrivacyHtml(String rawHtml) {
+        if (rawHtml == null) return null;
+
+        Safelist safelist = Safelist.relaxed()
+                .addTags("p", "br", "ul", "ol", "li", "strong", "b", "em", "i", "u", "span", "div")
+                .addAttributes("a", "href", "title")
+                .addProtocols("a", "href", "http", "https", "mailto");
+
+        return Jsoup.clean(rawHtml, safelist);
     }
 }

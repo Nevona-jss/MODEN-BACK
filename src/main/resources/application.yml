@@ -59,14 +59,20 @@ logging:
       enabled: ALWAYS
 
 file:
-  upload-dir: /home/hyona/IdeaProjects/MODEN/uploads
+  upload-dir: ./uploads
   base-url: http://localhost:${server.port}/uploads
 
+
 app:
+  admin:
+    phone: "940223633"
+    password: "root!234"
+
   jwt:
     secret: ${JWT_SECRET}
     access-expiration-ms: 86400000
     refresh-expiration-ms: 2592000000
+
 
 firebase:
   credentials:
@@ -75,8 +81,10 @@ firebase:
 cors:
   allowed-origins:
     - "http://localhost:5173"
-    - "http://127.0.0.1:5173"
+    - "http://192.168.1.24:5173"
     - "http://localhost:8080"
     - "http://127.0.0.1:8080"
     - "http://122.37.246.79:7005"
-    - "https://122.37.246.79:7005"
+    - "http://122.37.246.79:7006"
+    - "http://122.37.246.79:7007"
+

@@ -1,10 +1,11 @@
 package com.moden.modenapi.modules.event.controller;
 
-import com.moden.modenapi.common.dto.UploadResponse;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.service.ImageUploadService;
 import com.moden.modenapi.common.utils.CurrentUserUtil;
-import com.moden.modenapi.modules.event.dto.*;
+import com.moden.modenapi.modules.event.dto.EventCreateReq;
+import com.moden.modenapi.modules.event.dto.EventRes;
+import com.moden.modenapi.modules.event.dto.EventUpdateReq;
 import com.moden.modenapi.modules.event.service.EventService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -13,7 +14,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
-
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,22 +25,18 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "HAIR STUDIO-EVENT")
+@Tag(name = "EVENT")
 @RestController
-@RequestMapping("/api/studios/events")   // ✅ 더 이상 {studioId} 없음
+@RequestMapping("/api/events")
 @RequiredArgsConstructor
 public class EventController {
 
     private final EventService eventService;
-    private final ImageUploadService  imageUploadService;
+    private final ImageUploadService imageUploadService;
 
-    // ============================================================
-    // LIST + FILTER (현재 로그인한 studio 기준)
-    //  - title(또는 description) 키워드
-    //  - fromDate / toDate (이벤트 기간이 이 구간과 겹치는 것만)
-    //  - 파라미터를 하나도 안 주면 = 해당 스튜디오의 모든 활성 이벤트
-    // ============================================================
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    /* ================= LIST ================= */
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER','CUSTOMER')")
     @Operation(summary = "현재 스튜디오 이벤트 목록 + 필터 (title, fromDate, toDate)")
     @GetMapping("/list")
     public ResponseEntity<ResponseMessage<List<EventRes>>> listForCurrentStudio(
@@ -52,8 +48,9 @@ public class EventController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate toDate
     ) {
-
-        UUID studioId = CurrentUserUtil.currentUserId();  // ✅ 로그인된 사용자 → studioId
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        // ✅ 항상 studioUserId 로 resolve (studio / designer / customer 공용)
+        UUID studioId = eventService.resolveStudioIdForCurrentActor(currentUserId);
 
         List<EventRes> events = eventService.searchForStudio(
                 studioId,
@@ -67,29 +64,33 @@ public class EventController {
         );
     }
 
-    // 🔹 GET ONE (현재 studio 권한 체크 포함)
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    /* ================= GET ONE ================= */
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER','CUSTOMER')")
     @Operation(summary = "Get event details by ID (current studio)")
     @GetMapping("/get/{eventId}")
     public ResponseEntity<ResponseMessage<EventRes>> getEvent(@PathVariable UUID eventId) {
 
-        UUID studioId = CurrentUserUtil.currentUserId();
-        EventRes event = eventService.getEventForStudio(studioId, eventId);  // ✅ studio check 포함
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        UUID studioId = eventService.resolveStudioIdForCurrentActor(currentUserId);
 
-        return ResponseEntity.ok(ResponseMessage.success("Event retrieved", event));
+        EventRes res = eventService.getEventForStudio(studioId, eventId);
+
+        return ResponseEntity.ok(ResponseMessage.success("Event retrieved", res));
     }
+
+    /* ================= CREATE ================= */
 
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Create new event (current salon, with image upload)")
     @PostMapping(
             value = "/create",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE  // ✅ multipart
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
     )
     public ResponseEntity<ResponseMessage<EventRes>> createEvent(
             @RequestParam("title") String title,
             @RequestParam(value = "description", required = false) String description,
             @RequestParam(value = "discount", required = false) BigDecimal discount,
-
 
             @Parameter(
                     description = "Event start date (YYYY-MM-DD)",
@@ -103,7 +104,7 @@ public class EventController {
             @Parameter(
                     description = "Event end date (YYYY-MM-DD)",
                     example = "2025-11-31",
-                    schema = @Schema(type = "string", format = "date", example = "2025-02-31")
+                    schema = @Schema(type = "string", format = "date", example = "2025-11-30")
             )
             @RequestParam("endDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
@@ -112,13 +113,12 @@ public class EventController {
             @RequestParam(value = "image", required = false) MultipartFile imageFile
     ) throws Exception {
 
-        UUID studioId = CurrentUserUtil.currentUserId();
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        UUID studioId = eventService.resolveStudioIdForCurrentActor(currentUserId);
 
         String imageUrl = null;
         if (imageFile != null && !imageFile.isEmpty()) {
-            // ✅ oldingi ImageUploadService misolini ishlatyapmiz deb hisoblayman
-            UploadResponse uploadRes = imageUploadService.uploadEventImage(imageFile);
-            imageUrl = uploadRes.url();   // masalan: /uploads/events/2025/11/14/xxx.jpg
+            imageUrl = imageUploadService.uploadEventImage(imageFile);
         }
 
         EventCreateReq req = new EventCreateReq(
@@ -136,63 +136,46 @@ public class EventController {
                 .body(ResponseMessage.success("Event created successfully", created));
     }
 
+    /* ================= UPDATE ================= */
 
-
-    // 🔹 UPDATE (multipart, image ham yangilash mumkin)
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Update existing event (current salon, with image upload)")
     @PatchMapping(
             value = "/update/{eventId}",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE   // ✅ create bilan bir xil
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
     )
     public ResponseEntity<ResponseMessage<EventRes>> updateEvent(
             @PathVariable UUID eventId,
 
             @RequestParam(value = "title", required = false)
-            @Parameter(description = "Event title", example = "Updated Summer Discount 40%")
             String title,
 
             @RequestParam(value = "description", required = false)
-            @Parameter(description = "Event description", example = "40% off on all coloring services this summer.")
             String description,
 
             @RequestParam(value = "discount", required = false)
-            @Parameter(description = "Discount amount", example = "40000")
             BigDecimal discount,
 
             @RequestParam(value = "startDate", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            @Parameter(
-                    description = "Event start date (YYYY-MM-DD)",
-                    example = "2025-07-10",
-                    schema = @Schema(type = "string", format = "date", example = "2025-07-10")
-            )
             LocalDate startDate,
 
             @RequestParam(value = "endDate", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            @Parameter(
-                    description = "Event end date (YYYY-MM-DD)",
-                    example = "2025-07-31",
-                    schema = @Schema(type = "string", format = "date", example = "2025-07-31")
-            )
             LocalDate endDate,
 
             @RequestParam(value = "image", required = false)
-            @Parameter(description = "New event banner image file (optional)", required = false)
             MultipartFile imageFile
     ) throws Exception {
 
-        UUID studioId = CurrentUserUtil.currentUserId();
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        UUID studioId = eventService.resolveStudioIdForCurrentActor(currentUserId);
 
         String imageUrl = null;
         if (imageFile != null && !imageFile.isEmpty()) {
-            // ✅ yangi rasm yuklash (events/...) → URL
-            UploadResponse uploadRes = imageUploadService.uploadEventImage(imageFile);
-            imageUrl = uploadRes.url();   // masalan: /uploads/events/2025/11/14/xxx.jpg
+            imageUrl = imageUploadService.uploadEventImage(imageFile);
         }
 
-        // 🔹 EventUpdateReq – barcha fieldlar optional (null bo‘lsa service ichida o‘zgarmaydi)
         EventUpdateReq req = new EventUpdateReq(
                 title,
                 description,
@@ -207,15 +190,20 @@ public class EventController {
         return ResponseEntity.ok(ResponseMessage.success("Event updated successfully", updated));
     }
 
-    // 🔹 DELETE
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
-    @Operation(summary = "Delete (soft delete) event by ID (current salon)")
+    /* ================= DELETE ================= */
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER','CUSTOMER')")
+    @Operation(summary = "Delete event by ID (current studio)")
     @DeleteMapping("/delete/{eventId}")
     public ResponseEntity<ResponseMessage<Void>> deleteEvent(@PathVariable UUID eventId) {
 
-        UUID studioId = CurrentUserUtil.currentUserId();
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        UUID studioId = eventService.resolveStudioIdForCurrentActor(currentUserId);
+
         eventService.deleteEventForStudio(studioId, eventId);
 
-        return ResponseEntity.ok(ResponseMessage.success("Event deleted successfully", null));
+        return ResponseEntity.ok(
+                ResponseMessage.success("Event deleted", null)
+        );
     }
 }

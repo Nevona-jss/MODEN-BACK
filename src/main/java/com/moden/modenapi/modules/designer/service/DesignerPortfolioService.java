@@ -154,6 +154,46 @@ public class DesignerPortfolioService extends BaseService<DesignerPortfolioItem>
         }
     }
 
+    public void replaceWithUrls(UUID designerId, List<String> urls) {
+        DesignerDetail d = getDesigner(designerId);
+
+        // 1) 기존 포트폴리오 soft-delete (선택)
+        List<UUID> oldIds = d.getPortfolioItemIds();
+        if (oldIds != null && !oldIds.isEmpty()) {
+            List<DesignerPortfolioItem> oldItems = itemRepo.findAllByIdIn(oldIds);
+            for (DesignerPortfolioItem it : oldItems) {
+                it.setDeletedAt(java.time.Instant.now());
+                update(it); // BaseService#update
+            }
+        }
+
+        // 2) 새 아이템 생성
+        List<DesignerPortfolioItem> newItems = new ArrayList<>();
+        if (urls != null) {
+            for (String url : urls) {
+                if (url == null || url.isBlank()) continue;
+
+                DesignerPortfolioItem item = DesignerPortfolioItem.builder()
+                        .designerId(designerId)   // ✅ 꼭 넣어줘야 함 (NOT NULL)
+                        .imageUrl(url)
+                        .caption(null)            // 필요하면 캡션 추가
+                        .build();
+
+                newItems.add(create(item)); // BaseService#create
+            }
+        }
+
+        // 3) DesignerDetail.portfolioItemIds 갱신
+        List<UUID> newIds = newItems.stream()
+                .map(DesignerPortfolioItem::getId)
+                .collect(Collectors.toList());
+
+        d.setPortfolioItemIds(normalizeUniqueOrder(newIds));
+        designerRepo.save(d);
+    }
+
+
+
     /** Reorder with new ID order (must contain same IDs as current) */
     public void reorder(UUID designerId, List<UUID> newOrder) {
         DesignerDetail d = getDesigner(designerId);

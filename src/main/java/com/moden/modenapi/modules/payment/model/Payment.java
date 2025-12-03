@@ -24,9 +24,13 @@ public class Payment extends BaseEntity {
     @Column(name = "reservation_id", columnDefinition = "uniqueidentifier", nullable = false)
     private UUID reservationId;
 
+    // 어떤 쿠폰을 사용했는지 (고객 쿠폰 / 스튜디오 쿠폰 공통)
+    @Column(name = "coupon_id", columnDefinition = "uniqueidentifier")
+    private UUID couponId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", length = 20, nullable = false)
-    private PaymentStatus paymentStatus = PaymentStatus.UNPAID;  // UNPAID / PAID / CANCELED ...
+    private PaymentStatus paymentStatus = PaymentStatus.PENDING;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", length = 30)
@@ -40,10 +44,6 @@ public class Payment extends BaseEntity {
     @Column(name = "product_total", precision = 12, scale = 2, nullable = false)
     private BigDecimal productTotal = BigDecimal.ZERO;
 
-    // 쿠폰으로 할인된 총 금액
-    @Column(name = "coupon_discount", precision = 12, scale = 2, nullable = false)
-    private BigDecimal couponDiscount = BigDecimal.ZERO;
-
     // 포인트로 사용한 금액
     @Column(name = "points_used", precision = 12, scale = 2, nullable = false)
     private BigDecimal pointsUsed = BigDecimal.ZERO;
@@ -52,16 +52,16 @@ public class Payment extends BaseEntity {
     @Column(name = "total_amount", precision = 12, scale = 2, nullable = false)
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
-    // 어떤 쿠폰을 사용했는지 (고객 쿠폰 / 스튜디오 쿠폰 공통)
-    @Column(name = "coupon_id", columnDefinition = "uniqueidentifier")
-    private UUID couponId;
+    //  디자이너 인센티브 금액 (예: 3,000원)
+    @Column(name = "designer_tip_amount", precision = 12, scale = 2, nullable = false)
+    private BigDecimal designerTipAmount = BigDecimal.ZERO;
 
     @PrePersist
     void prePersist() {
         if (serviceTotal == null) serviceTotal = BigDecimal.ZERO;
         if (productTotal == null) productTotal = BigDecimal.ZERO;
-        if (couponDiscount == null) couponDiscount = BigDecimal.ZERO;
         if (pointsUsed == null) pointsUsed = BigDecimal.ZERO;
         if (totalAmount == null) totalAmount = BigDecimal.ZERO;
+        if (designerTipAmount == null) designerTipAmount = BigDecimal.ZERO;
     }
 }

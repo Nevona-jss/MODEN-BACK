@@ -18,19 +18,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * JWT Auth Filter:
- * - Skips swagger and truly public endpoints
- * - Extracts token from Authorization: Bearer ... or cookie(access_token)
- * - Validates token, sets principal=userId and ROLE_* authorities
- */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
 
-    // Public endpoints (no auth needed)
+    // Swagger, static va boshqalar
     private static final String[] PUBLIC_PATHS = {
             "/", "/error",
             "/swagger-ui", "/swagger-ui/", "/swagger-ui/index.html",
@@ -38,18 +32,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/swagger-resources", "/webjars"
     };
 
-    // Public auth endpoints — DO NOT include /api/auth/me here
-    private static final String[] PUBLIC_AUTH_PATHS = {
-            "/api/auth/login",
-            "/api/auth/refresh",
-            "/api/admin/login"
-    };
-
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
 
-        // Always allow preflight
+        // preflight (CORS OPTIONS) – doim ruxsat
         if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
             chain.doFilter(req, res);
             return;
@@ -57,61 +44,95 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         final String uri = req.getRequestURI();
 
+        // 🔓 Public endpointlarga token shart emas
         if (isPublic(uri)) {
             chain.doFilter(req, res);
             return;
         }
 
         try {
-            // If authentication already set, continue
+            // allaqachon autentifikatsiya bo‘lsa, o‘tkazib yuboramiz
             if (SecurityContextHolder.getContext().getAuthentication() != null) {
                 chain.doFilter(req, res);
                 return;
             }
 
             String token = extractToken(req);
-            if (token == null) {
-                chain.doFilter(req, res);
+
+            // ❌ Protected endpoint + token yo‘q → 401, controllerga bormaydi
+            if (token == null || token.isBlank()) {
+                sendUnauthorized(res, "NO_TOKEN");
                 return;
             }
 
-            if (jwtProvider.validateToken(token)) {
-                // subject = userId (UUID string)
-                String userId = jwtProvider.getUserId(token);
-
-                // role claim (single). If you later add multiple roles, make this a list.
-                String roleClaim = jwtProvider.getUserRole(token); // e.g. "CUSTOMER" or "ROLE_CUSTOMER"
-                String authority = normalizeRole(roleClaim);       // -> "ROLE_CUSTOMER" (default ROLE_USER)
-
-                List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-                authorities.add(new SimpleGrantedAuthority(authority));
-
-                // Principal = userId string (no DB lookup here)
-                UsernamePasswordAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(userId, null, authorities);
-                auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(req));
-
-                SecurityContextHolder.getContext().setAuthentication(auth);
+            // ❌ Token yaroqsiz / expired → 401
+            if (!jwtProvider.validateToken(token)) {
+                sendUnauthorized(res, "INVALID_OR_EXPIRED_TOKEN");
+                return;
             }
+
+            // ✅ Token OK → userId, role dan Authentication yasash
+            String userId = jwtProvider.getUserId(token);
+            String roleClaim = jwtProvider.getUserRole(token);    // masalan: "CUSTOMER"
+            String authority = normalizeRole(roleClaim);          // "ROLE_CUSTOMER"
+
+            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+            authorities.add(new SimpleGrantedAuthority(authority));
+
+            UsernamePasswordAuthenticationToken auth =
+                    new UsernamePasswordAuthenticationToken(userId, null, authorities);
+            auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(req));
+            SecurityContextHolder.getContext().setAuthentication(auth);
+
         } catch (Exception e) {
+            // Har qanday exception’da ham 401 qaytaramiz
             logger.warn("JWT filter warning: " + e.getMessage());
-            // keep going to let the entrypoint/handlers respond properly
+            sendUnauthorized(res, "INVALID_OR_EXPIRED_TOKEN");
+            return;
         }
 
+        // hammasi joyida bo‘lsa – keyingi filter/controller
         chain.doFilter(req, res);
     }
 
+    /** 🔓 Qaysi path’lar public? */
     private boolean isPublic(String uri) {
-        // Swagger & static
+        // 1) Swagger & static
         for (String p : PUBLIC_PATHS) {
             if (uri.equals(p) || uri.startsWith(p + "/")) return true;
         }
-        // Specific public auth endpoints
-        for (String p : PUBLIC_AUTH_PATHS) {
-            if (uri.equals(p)) return true;
+
+        if (uri.startsWith("/uploads")) {
+            return true;
         }
+
+        // 3) Auth public endpointlar
+        if (uri.equals("/api/auth/login")
+                || uri.equals("/api/auth/login-id")
+                || uri.equals("/api/auth/refresh")) {
+            return true;
+        }
+
+        // logout’ni public yoki protected qilishing o'zingga bog'liq.
+        // Hoziroq public qoldirsak ham bo'ladi:
+        if (uri.equals("/api/auth/logout")) {
+            return true;
+        }
+
+        // 4) Telefon verifikatsiya API’lari → public
+        if (uri.startsWith("/api/phone/")) {
+            return true;
+        }
+
+        // 5) /api/auth/me → PROTECTED (current user info)
+        if (uri.equals("/api/auth/me")) {
+            return false;
+        }
+
         return false;
     }
+
+
 
     private static String normalizeRole(String roleClaim) {
         if (roleClaim == null || roleClaim.isBlank()) return "ROLE_USER";
@@ -119,7 +140,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return r.startsWith("ROLE_") ? r : "ROLE_" + r;
     }
 
-    /** Authorization: Bearer ... or cookie(access_token) */
+    /** Authorization: Bearer ... yoki cookie(access_token) */
     private String extractToken(HttpServletRequest req) {
         String header = req.getHeader(HttpHeaders.AUTHORIZATION);
         if (header != null && header.startsWith("Bearer ")) {
@@ -134,5 +155,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
         return null;
+    }
+
+    /** 401 helper */
+    private void sendUnauthorized(HttpServletResponse res, String code) throws IOException {
+        if (res.isCommitted()) return;
+
+        res.setStatus(HttpServletResponse.SC_UNAUTHORIZED); // 401
+        res.setContentType("application/json;charset=UTF-8");
+        String body = "{\"success\":false,\"code\":\"" + code + "\",\"message\":\"Unauthorized\"}";
+        res.getWriter().write(body);
+        res.getWriter().flush();
     }
 }

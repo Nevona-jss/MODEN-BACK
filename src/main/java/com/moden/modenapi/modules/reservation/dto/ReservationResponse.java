@@ -2,11 +2,10 @@ package com.moden.modenapi.modules.reservation.dto;
 
 import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.enums.PaymentStatus;
-import com.moden.modenapi.common.enums.ConsultationStatus;   // ✅ 새 enum (WAITING/COMPLETED)
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Schema(description = "예약 응답 DTO")
@@ -14,6 +13,9 @@ public record ReservationResponse(
 
         @Schema(description = "예약 ID (UUID)")
         UUID id,
+
+        @Schema(description = "studio ID (UUID)")
+        UUID studioId,
 
         @Schema(description = "고객 ID (UUID)")
         UUID customerId,
@@ -29,8 +31,17 @@ public record ReservationResponse(
 
         String serviceName,
 
-        @Schema(description = "예약 일시 (날짜 + 시간)")
-        LocalDateTime reservationAt,
+        @Schema(description = "예약 날짜")
+        LocalDate reservationDate,
+
+        @Schema(description = "예약 시작 시간 (HH:mm)")
+        String startTime,
+
+        @Schema(description = "예약 종료 시간 (HH:mm)")
+        String endTime,
+
+        @Schema(description = "고객 전화번호")
+        String customerPhone,
 
         @Schema(description = "비고 / 설명")
         String description,
@@ -41,17 +52,11 @@ public record ReservationResponse(
         )
         ReservationStatus status,
 
-        @Schema(
-                description = "상담 상태 (WAITING=상담대기 / COMPLETED=상담완료)",
-                implementation = ConsultationStatus.class
-        )
-        ConsultationStatus consultationStatus,
-
-        @Schema(description = "결제 ID (PG사에서 내려주는 payment id 등)")
+        @Schema(description = "결제 ID")
         String paymentId,
 
         @Schema(
-                description = "결제 상태 (UNPAID / PAID)",
+                description = "결제 상태 (PENDING / PAID 등)",
                 implementation = PaymentStatus.class
         )
         PaymentStatus paymentStatus,
@@ -65,4 +70,4 @@ public record ReservationResponse(
         @Schema(description = "삭제 시각 (Soft delete, null 가능)")
         Instant deletedAt
 
-){}
+) {}

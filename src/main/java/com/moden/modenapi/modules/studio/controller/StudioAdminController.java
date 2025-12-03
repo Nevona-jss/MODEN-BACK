@@ -1,17 +1,29 @@
 package com.moden.modenapi.modules.studio.controller;
 
+import com.moden.modenapi.common.enums.ConsultationStatus;
+import com.moden.modenapi.common.enums.CouponStatus;
+import com.moden.modenapi.common.enums.PointType;
 import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.utils.CurrentUserUtil;
+import com.moden.modenapi.modules.consultation.dto.ConsultationRes;
+import com.moden.modenapi.modules.consultation.service.ConsultationService;
+import com.moden.modenapi.modules.coupon.dto.CouponResponse;
+import com.moden.modenapi.modules.coupon.service.CouponService;
+import com.moden.modenapi.modules.customer.dto.CustomerListPageRes;
 import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
-import com.moden.modenapi.modules.customer.dto.CustomerResponse;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.service.CustomerService;
 import com.moden.modenapi.modules.designer.dto.DesignerCreateDto;
 import com.moden.modenapi.modules.designer.dto.DesignerResponse;
+import com.moden.modenapi.modules.designer.dto.DesignerUpdateReq;
 import com.moden.modenapi.modules.designer.service.DesignerService;
+import com.moden.modenapi.modules.point.dto.PointCustomerRes;
+import com.moden.modenapi.modules.point.service.PointService;
 import com.moden.modenapi.modules.reservation.dto.ReservationResponse;
 import com.moden.modenapi.modules.reservation.service.ReservationService;
+import com.moden.modenapi.modules.studio.dto.StudioBirthdayCouponRequest;
+import com.moden.modenapi.modules.studio.dto.StudioPrivacyPolicyRequest;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
 import com.moden.modenapi.modules.studio.service.HairStudioService;
@@ -41,7 +53,42 @@ public class StudioAdminController {
     private final DesignerService designerService;
     private final CustomerService customerService;
     private final ReservationService reservationService;
+    private final ConsultationService consultationService;
+    private final CouponService couponService;
+    private final PointService pointService;
 
+
+    /**
+     * 1) Hozir login bo'lgan studio owner uchun
+     * tug'ilgan kun kupon setting update
+     */
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @PatchMapping("/update/birthday-coupon")
+    public ResponseMessage<String> updateBirthdayCoupon(
+            @RequestBody StudioBirthdayCouponRequest req
+    ) {
+        UUID userId = CurrentUserUtil.currentUserId();
+
+        studioService.updateBirthdayCouponSettings(userId, req);
+
+        return ResponseMessage.success("Birthday coupon settings updated");
+    }
+
+    /**
+     * 2) Hozir login bo'lgan studio owner uchun
+     * 개인정보/보안 안내 HTML update
+     */
+    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PatchMapping("/update/privacy-policy")
+    public ResponseMessage<String> updatePrivacyPolicy(
+            @RequestBody StudioPrivacyPolicyRequest req
+    ) {
+        UUID userId = CurrentUserUtil.currentUserId();  // 🔹 shu yerda ham
+
+        studioService.updatePrivacyPolicyHtml(userId, req);
+
+        return ResponseMessage.success("Privacy policy updated");
+    }
     // ----------------------------------------------------------------------
     // 🔹 STUDIO: 자기 프로필 수정 (partial)
     // ----------------------------------------------------------------------
@@ -60,9 +107,6 @@ public class StudioAdminController {
         );
     }
 
-    // ----------------------------------------------------------------------
-    // 🔹 STUDIO/ADMIN: Create designer
-    // ----------------------------------------------------------------------
     @PreAuthorize("hasRole('HAIR_STUDIO')")
     @PostMapping(
             value = "/designer/register",
@@ -77,25 +121,41 @@ public class StudioAdminController {
                 .body(ResponseMessage.success("Designer created successfully", created));
     }
 
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @PatchMapping("/designers/update/{userId}")
+    public ResponseEntity<ResponseMessage<DesignerResponse>> updateDesignerProfileByStudio(
+            HttpServletRequest request,
+            @PathVariable UUID userId,
+            @RequestBody DesignerUpdateReq req
+    ) {
+        var updated = designerService.updateProfileByStudio(request, userId, req);
+        return ResponseEntity.ok(ResponseMessage.success("Designer profile updated", updated));
+    }
+
 
     // ----------------------------------------------------------------------
     // 🔹 Studio: 고객 리스트
     // ----------------------------------------------------------------------
-    @Operation(summary = "Studio: list my customers")
-    @GetMapping("/customers/list")
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
-    public ResponseEntity<ResponseMessage<List<CustomerResponse>>> listStudioCustomers(
-            @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @GetMapping("customer/list")
+    public ResponseEntity<ResponseMessage<CustomerListPageRes>> listStudioCustomers(
+            @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "fromDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(name = "toDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(name = "page", defaultValue = "1") int page,
+            @RequestParam(name = "limit", defaultValue = "10") int limit
     ) {
-        var list = customerService.listStudioCustomers(keyword, fromDate, toDate);
+        var data = customerService.listStudioCustomers(keyword, fromDate, toDate, page, limit);
         return ResponseEntity.ok(
-                ResponseMessage.success("Designer list for current studio", list)
-        );    }
+                ResponseMessage.success("Customer filtered list.", data)
+        );
+    }
 
 
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
             summary = "List designers for current studio (filter bilan)",
             description = """
@@ -115,6 +175,55 @@ public class StudioAdminController {
         );
     }
 
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @GetMapping("/customer/{customerUserId}")
+    public ResponseEntity<ResponseMessage<?>> getCustomerOfStudio(
+            @PathVariable("customerUserId") UUID customerUserId
+    ) {
+        var res = customerService.getCustomerProfileForStudio(customerUserId);
+        return ResponseEntity.ok(ResponseMessage.success("Customer loaded", res));
+    }
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @GetMapping("/customer/consultation/list/{customerId}")
+    public ResponseEntity<ResponseMessage<List<ConsultationRes>>> listConsultationsForCustomerInStudio(
+            @PathVariable UUID customerId,
+            @RequestParam(required = false) ConsultationStatus status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate
+    ) {
+        var list = consultationService.listForStudioByCustomer(
+                customerId,
+                status,
+                fromDate,
+                toDate
+        );
+        return ResponseEntity.ok(ResponseMessage.success("OK", list));
+    }
+
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @GetMapping("/customer/coupon/list/{customerId}")
+    public ResponseEntity<ResponseMessage<List<CouponResponse>>> listCouponsForCustomer(
+            @PathVariable UUID customerId,
+            @RequestParam(required = false) CouponStatus status
+    ) {
+        var list = couponService.listForCustomer(customerId, status);
+        return ResponseEntity.ok(ResponseMessage.success("OK", list));
+    }
+
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @GetMapping("/customer/point/list/{customerId}")
+    public ResponseEntity<ResponseMessage<List<PointCustomerRes>>> listPointsForCustomer(
+            @PathVariable UUID customerId,
+            @RequestParam(required = false) PointType type,
+            @RequestParam(required = false, defaultValue = "ALL") String period
+    ) {
+        var list = pointService.listForCustomer(customerId, type, period);
+        return ResponseEntity.ok(ResponseMessage.success("OK", list));
+    }
+
     // ----------------------------------------------------------------------
     // 🔹 특정 디자이너 조회
     // ----------------------------------------------------------------------
@@ -122,6 +231,7 @@ public class StudioAdminController {
             summary = "Get designer by ID",
             description = "Returns a single designer profile (requires admin/studio permission)."
     )
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @GetMapping("/designer/{designerId}")
     public ResponseEntity<ResponseMessage<DesignerResponse>> getDesigner(
             @PathVariable UUID designerId
@@ -153,7 +263,7 @@ public class StudioAdminController {
 
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Reservation list (filter + pagination)")
-    @GetMapping("/list")
+    @GetMapping("/reservation/list")
     public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listDynamic(
             @RequestParam(required = false) UUID designerId,
             @RequestParam(required = false) UUID customerId,
@@ -190,7 +300,7 @@ public class StudioAdminController {
     // ----------------------------------------------------------------------
     @Operation(summary = "Studio: update a customer in my studio")
     @PatchMapping("/customers/update/{customerUserId}")
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     public ResponseEntity<ResponseMessage<CustomerDetail>> updateCustomer(
             @PathVariable UUID customerUserId,
             @Valid @RequestBody CustomerProfileUpdateReq req
@@ -206,7 +316,7 @@ public class StudioAdminController {
     // ----------------------------------------------------------------------
     @Operation(summary = "Studio: delete a customer in my studio")
     @DeleteMapping("/customer/delete/{customerUserId}")
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     public ResponseEntity<ResponseMessage<Void>> deleteCustomer(
             @PathVariable UUID customerUserId
     ) {

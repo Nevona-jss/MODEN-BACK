@@ -13,30 +13,26 @@ import java.util.*;
 
 @Repository
 public interface CustomerCouponRepository extends BaseRepository<CustomerCoupon, UUID> {
-
-    @Query("""
-        select cc
-        from CustomerCoupon cc
-        where cc.studioId = :studioId
-          and cc.customerId = :customerId
-          and cc.deletedAt is null
-        order by coalesce(cc.updatedAt, cc.createdAt) desc
-    """)
-    List<CustomerCoupon> findAllByStudioIdAndCustomerIdAndDeletedAtIsNull(
-            @Param("studioId") UUID studioId,
-            @Param("customerId") UUID customerId
-    );
     Optional<CustomerCoupon> findByIdAndDeletedAtIsNull(UUID id);
 
     List<CustomerCoupon> findAllByCustomerIdAndDeletedAtIsNull(UUID customerId);
 
-    List<CustomerCoupon> findAllByCustomerIdAndStatusAndDeletedAtIsNull(UUID customerId, CouponStatus status);
-
-    boolean existsByCouponIdAndCustomerIdAndStatusIn(UUID couponId,
-                                                     UUID customerId,
-                                                     List<CouponStatus> statuses);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from CustomerCoupon c where c.id = :id and c.deletedAt is null")
     Optional<CustomerCoupon> lockByIdForUpdate(@Param("id") UUID id);
+
+    // ✅ customerId 기준 전체 + createdAt 내림차순
+    List<CustomerCoupon> findAllByCustomerIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID customerId);
+
+    /**
+     * 같은 couponId + customerId 조합의 살아있는 row 가 이미 있는지 검사
+     *  → 생일쿠폰, 첫방문쿠폰 중복 발급 방지 용도
+     */
+    boolean existsByCouponIdAndCustomerIdAndDeletedAtIsNull(UUID couponId, UUID customerId);
+
+    /**
+     * soft delete 고려한 단건 조회
+     */
+
+
 }

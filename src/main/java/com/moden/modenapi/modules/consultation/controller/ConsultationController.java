@@ -1,11 +1,8 @@
 package com.moden.modenapi.modules.consultation.controller;
 
 import com.moden.modenapi.common.enums.ConsultationStatus;
-import com.moden.modenapi.common.enums.PaymentStatus;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.service.FileStorageService;
-import com.moden.modenapi.common.utils.CurrentUserUtil;
-import com.moden.modenapi.modules.consultation.dto.ConsultationCreateReq;
 import com.moden.modenapi.modules.consultation.dto.ConsultationRes;
 import com.moden.modenapi.modules.consultation.dto.ConsultationUpdateReq;
 import com.moden.modenapi.modules.consultation.service.ConsultationService;
@@ -29,58 +26,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ConsultationController {
 
-    private final FileStorageService fileStorageService;
     private final ConsultationService consultationService;
-
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
-    @PostMapping(
-            value = "/create",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-    )
-    public ResponseEntity<ResponseMessage<ConsultationRes>> create(
-            @RequestParam("reservationId") UUID reservationId,
-            @RequestPart(value = "wantedImage", required = false) MultipartFile wantedImage,
-            @RequestPart(value = "beforeImage", required = false) MultipartFile beforeImage,
-            @RequestPart(value = "afterImage", required = false) MultipartFile afterImage,
-            @RequestPart(value = "drawingImage", required = false) MultipartFile drawingImage,
-            @RequestParam(value = "consultationMemo", required = false) String consultationMemo,
-            @RequestParam(value = "customerMemo", required = false) String customerMemo
-    ) {
-        // 🔹 현재 로그인 사용자 (디자이너 or 스튜디오)
-        UUID currentUserId = CurrentUserUtil.currentUserId();
-
-        // 파일 -> URL 변환
-        String wantedUrl = (wantedImage != null && !wantedImage.isEmpty())
-                ? fileStorageService.saveFile(wantedImage)
-                : null;
-
-        String beforeUrl = (beforeImage != null && !beforeImage.isEmpty())
-                ? fileStorageService.saveFile(beforeImage)
-                : null;
-
-        String afterUrl = (afterImage != null && !afterImage.isEmpty())
-                ? fileStorageService.saveFile(afterImage)
-                : null;
-
-        String drawingUrl = (drawingImage != null && !drawingImage.isEmpty())
-                ? fileStorageService.saveFile(drawingImage)
-                : null;
-
-        ConsultationCreateReq dto = new ConsultationCreateReq(
-                reservationId,
-                wantedUrl,
-                beforeUrl,
-                afterUrl,
-                consultationMemo,
-                customerMemo,
-                drawingUrl
-        );
-
-        // 🔹 스튜디오/디자이너 권한 체크 포함된 서비스 메서드 호출
-        ConsultationRes res = consultationService.createByStaff(currentUserId, dto);
-        return ResponseEntity.ok(ResponseMessage.success("상담이 생성되었습니다.", res));
-    }
-
 
     // ----------------------------------------
     //  상담 단건 조회 (상담 ID 기준)
@@ -108,69 +54,41 @@ public class ConsultationController {
         return ResponseEntity.ok(ResponseMessage.success("예약 기준 상담 조회가 완료되었습니다.", res));
     }
 
+    // ----------------------------------------
+    //  상담 수정 (이미지 업로드 + 디자이너 배정 가능)
+    // ----------------------------------------
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
-            summary = "상담 수정 (이미지 업로드 포함)"
+            summary = "상담 수정 (URL 및 메모 수정, status는 자동 COMPLETED)"
     )
     @PatchMapping(
             value = "/update/{id}",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
     )
     public ResponseEntity<ResponseMessage<ConsultationRes>> update(
             @PathVariable UUID id,
-            @RequestParam(value = "status", required = false) ConsultationStatus status,
-            @RequestParam(value = "consultationMemo", required = false) String consultationMemo,
-            @RequestParam(value = "customerMemo", required = false) String customerMemo,
-            @RequestPart(value = "wantedImage", required = false) MultipartFile wantedImage,
-            @RequestPart(value = "beforeImage", required = false) MultipartFile beforeImage,
-            @RequestPart(value = "afterImage", required = false) MultipartFile afterImage,
-            @RequestPart(value = "drawingImage", required = false) MultipartFile drawingImage
+            @RequestBody ConsultationUpdateReq req
     ) {
-        // 파일이 넘어온 경우에만 저장 → URL 생성
-        String wantedUrl = (wantedImage != null && !wantedImage.isEmpty())
-                ? fileStorageService.saveFile(wantedImage)
-                : null;
-
-        String beforeUrl = (beforeImage != null && !beforeImage.isEmpty())
-                ? fileStorageService.saveFile(beforeImage)
-                : null;
-
-        String afterUrl = (afterImage != null && !afterImage.isEmpty())
-                ? fileStorageService.saveFile(afterImage)
-                : null;
-
-        String drawingUrl = (drawingImage != null && !drawingImage.isEmpty())
-                ? fileStorageService.saveFile(drawingImage)
-                : null;
-
-        // 서비스에서 쓰는 DTO 로 조립
-        ConsultationUpdateReq req = new ConsultationUpdateReq(
-                status,
-                wantedUrl,
-                beforeUrl,
-                afterUrl,
-                consultationMemo,
-                customerMemo,
-                drawingUrl
-        );
-
         ConsultationRes res = consultationService.update(id, req);
-        return ResponseEntity.ok(ResponseMessage.success("상담 정보가 수정되었습니다.", res));
+        return ResponseEntity.ok(
+                ResponseMessage.success("상담 정보가 수정되었습니다.", res)
+        );
     }
 
     // ----------------------------------------
-//  상담 목록 (스튜디오/관리자/디자이너용) - 동적 필터
-// ----------------------------------------
+    //  상담 목록 (스튜디오/디자이너용) - 동적 필터
+    // ----------------------------------------
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
             summary = "상담 목록 조회 (필터 포함)",
             description = """
                 상담 상태 및 예약/고객 정보를 기준으로 동적 조회.
                 - status      : PENDING / COMPLETED ...
-                - designerId  : 예약 디자이너 ID
+                - designerId  : 상담 담당 디자이너 ID (consultation.designer_id)
                 - customerId  : 예약 고객 ID
                 - serviceId   : 시술(서비스) ID
-                - fromDate/toDate : 예약일시 기준 날짜 범위 (YYYY-MM-DD)
+                - fromDate/toDate : 예약일 기준 날짜 범위 (YYYY-MM-DD)
                 아무 파라미터도 안 주면 전체 상담(soft delete 제외)을 반환합니다.
                 """
     )
@@ -199,5 +117,4 @@ public class ConsultationController {
                 ResponseMessage.success("상담 목록 조회가 완료되었습니다.", list)
         );
     }
-
 }

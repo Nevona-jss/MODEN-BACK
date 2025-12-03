@@ -41,13 +41,10 @@ public class AdminService {
     private String uploadPath;
 
 
-    // 🔹 CREATE STUDIO (ADMIN) – auto-creates/uses owner User by ownerPhone
-
     @Transactional
     public StudioRes createStudio(StudioCreateReq req,
                                   MultipartFile logoFile,
-                                  MultipartFile bannerFile,
-                                  MultipartFile profileFile) {
+                                  MultipartFile bannerFile) {
 
         // 1) minimal validation
         if (isBlank(req.fullName()) || isBlank(req.businessNo())
@@ -98,11 +95,10 @@ public class AdminService {
         } while (studioRepository.existsByIdForLogin(studioCode));
 
         // 5) optional files
-        String logoUrl = null, bannerUrl = null, profileUrl = null;
+        String logoUrl = null, bannerUrl = null;
         try {
             if (logoFile != null && !logoFile.isEmpty())     logoUrl = fileStorageService.saveFile(logoFile);
             if (bannerFile != null && !bannerFile.isEmpty()) bannerUrl = fileStorageService.saveFile(bannerFile);
-            if (profileFile != null && !profileFile.isEmpty()) profileUrl = fileStorageService.saveFile(profileFile);
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "File upload failed: " + e.getMessage());
         }
@@ -112,7 +108,7 @@ public class AdminService {
                 .userId(owner.getId())
                 .idForLogin(studioCode)
                 .businessNo(req.businessNo())
-                .ownerName(null)               // ← keyin update’da kiritasiz
+                .ownerName(null)
                 .studioPhone(null)
                 .address(null)
                 .description(null)
@@ -246,7 +242,6 @@ public class AdminService {
                 s.getUserId(),
                 ownerFullName,
                 ownerPhone,
-                // optional
                 s.getIdForLogin(),
                 s.getBusinessNo(),
                 s.getOwnerName(),

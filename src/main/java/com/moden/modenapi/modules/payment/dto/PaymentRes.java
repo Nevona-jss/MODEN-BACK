@@ -29,7 +29,7 @@ public record PaymentRes(
         @Schema(description = "제품 사용 총 금액")
         BigDecimal productTotal,
 
-        @Schema(description = "쿠폰 할인 금액 합계")
+        @Schema(description = "쿠폰 할인 금액 합계 (계산값)")
         BigDecimal couponDiscount,
 
         @Schema(description = "포인트 사용 금액")
@@ -37,6 +37,9 @@ public record PaymentRes(
 
         @Schema(description = "최종 결제 금액 (실제 지불액)")
         BigDecimal totalAmount,
+
+        @Schema(description = "디자이너 인센티브 금액")
+        BigDecimal designerTipAmount,
 
         @Schema(description = "생성 시각")
         Instant createdAt,

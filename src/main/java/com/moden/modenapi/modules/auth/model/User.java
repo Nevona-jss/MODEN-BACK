@@ -6,6 +6,8 @@ import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.Instant;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -25,5 +27,14 @@ public class User  extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;
+
+    @Column(nullable = false)
+    private boolean phoneVerified = false;
+
+    @Column
+    private Instant phoneVerifiedAt;
+
+    @Column(length = 128)
+    private String firebaseUid;
 
 }

@@ -8,38 +8,42 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+@Schema(description = "고객이 보유한 쿠폰 정보 응답 DTO")
 public record CustomerCouponRes(
 
-        @Schema(description = "CustomerCoupon ID")
+        @Schema(description = "고객 쿠폰 ID")
         UUID id,
 
-        @Schema(description = "Studio ID")
+        @Schema(description = "헤어샵(스튜디오) ID")
         UUID studioId,
 
-        @Schema(description = "Coupon ID")
+        @Schema(description = "쿠폰 ID")
         UUID couponId,
 
-        @Schema(description = "Coupon nomi")
+        @Schema(description = "쿠폰 이름")
         String couponName,
 
-        @Schema(description = "Chegirma (%)")
+        @Schema(description = "쿠폰 설명")
+        String description,
+
+        @Schema(description = "할인율(%)")
         BigDecimal discountRate,
 
-        @Schema(description = "Chegirma (fixed amount)")
+        @Schema(description = "정액 할인 금액")
         BigDecimal discountAmount,
 
-        @Schema(description = "Coupon holati")
+        @Schema(description = "쿠폰 상태")
         CouponStatus status,
 
-        @Schema(description = "Coupon boshlanish sanasi")
+        @Schema(description = "쿠폰 사용 시작일")
         LocalDate startDate,
 
-        @Schema(description = "Coupon tugash sanasi")
+        @Schema(description = "쿠폰 사용 종료일(만료일)")
         LocalDate expiryDate,
 
-        @Schema(description = "Customerga berilgan vaqt")
+        @Schema(description = "고객에게 쿠폰이 발급된 시간")
         Instant issuedAt,
 
-        @Schema(description = "Ishlatilgan vaqt (bo'lsa)")
-        Instant usedAt
+        @Schema(description = "쿠폰 사용 시간(사용된 경우)")
+        Instant usedDate
 ) {}

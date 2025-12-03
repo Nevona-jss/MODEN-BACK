@@ -1,7 +1,6 @@
 package com.moden.modenapi.modules.studioservice.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.moden.modenapi.common.enums.ServiceType;
 import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -22,9 +21,8 @@ public class StudioService extends BaseEntity {
     @Column(name = "studio_id", columnDefinition = "uniqueidentifier", nullable = false)
     private UUID studioId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "service_type", length = 30, nullable = false)
-    private ServiceType serviceType;
+    @Column(name = "service_name", length = 200, nullable = false)
+    private String serviceName;
 
     @Lob
     private String afterService;

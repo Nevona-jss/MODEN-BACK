@@ -6,7 +6,8 @@ import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 @Getter
@@ -17,6 +18,9 @@ import java.util.UUID;
 @Entity
 @Table(name = "reservation")
 public class Reservation extends BaseEntity {
+
+    @Column(name = "studio_id", nullable = false, columnDefinition = "uniqueidentifier")
+    private UUID studioId;
 
     @Column(name = "customer_id", nullable = false, columnDefinition = "uniqueidentifier")
     private UUID customerId;
@@ -30,15 +34,20 @@ public class Reservation extends BaseEntity {
     @Column(name = "description", length = 1000)
     private String description;
 
-    @Column(name = "reservation_at", nullable = false)
-    private LocalDateTime reservationAt;
+    // 예약 날짜 (yyyy-MM-dd)
+    @Column(name = "reservation_date", nullable = false)
+    private LocalDate reservationDate;
+
+    // 시작 시간 (예: "08:00")
+    @Column(name = "start_time", nullable = false, length = 5)
+    private String startTime;
+
+    // 종료 시간 (예: "09:15")
+    @Column(name = "end_time", nullable = false, length = 5)
+    private String endTime;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
     private ReservationStatus status;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "consultation_status")
-    @Builder.Default
-    private ConsultationStatus consultationStatus = ConsultationStatus.PENDING;
 }

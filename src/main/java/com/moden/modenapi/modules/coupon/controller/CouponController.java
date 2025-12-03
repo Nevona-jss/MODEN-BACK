@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "HAIR STUDIO COUPON ")
+@Tag(name = "COUPON")
 @RestController
 @RequestMapping("/api/studios/coupon")
 @RequiredArgsConstructor
@@ -38,9 +38,24 @@ public class CouponController {
     public ResponseEntity<ResponseMessage<CouponResponse>> create(
             @Valid @RequestBody CouponCreateRequest req
     ) {
-        var created = couponService.create(req);
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+
+        var created = couponService.createForCurrentUser(currentUserId, req);
         return ResponseEntity.ok(
                 ResponseMessage.success("Coupon successfully created.", created)
+        );
+    }
+
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @Operation(summary = "쿠폰 삭제 (소프트 삭제)", description = "쿠폰을 실제로 삭제하지 않고 deletedAt 을 설정하는 방식의 소프트 삭제입니다.")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ResponseMessage<Void>> softDelete(@PathVariable UUID id) {
+
+        couponService.softDelete(id);
+
+        return ResponseEntity.ok(
+                ResponseMessage.success("Coupon successfully deleted", null)
         );
     }
 
@@ -107,7 +122,7 @@ public class CouponController {
     // STUDIO: 특정 userId(customer)의 쿠폰 리스트 보기
     //  (이건 policy가 아니라 실제 발급된 customer_coupon 기준이므로 별도 유지)
     // ----------------------------------------------------------------------
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
             summary = "List coupons for a customer (by userId)",
             description = "Studio userId (customer) kiritib, shu studioning ushbu customerga bergan barcha kuponlarini ko'radi."

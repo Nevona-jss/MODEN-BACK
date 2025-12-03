@@ -54,6 +54,4 @@ public class CustomerDetail extends BaseEntity {
     @Column(name = "first_visit_coupon_id", columnDefinition = "uniqueidentifier")
     private UUID firstVisitCouponId;
 
-    @Column(name = "last_birthday_coupon_id", columnDefinition = "uniqueidentifier")
-    private UUID lastBirthdayCouponId;
 }

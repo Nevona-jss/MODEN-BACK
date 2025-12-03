@@ -36,15 +36,15 @@ public abstract class BaseService<T> {
     }
 
     @Transactional
-    public void softDelete(UUID id) {
+    public void softDelete(UUID productId) {
         var repo = getRepository();
-        T entity = repo.findById(id)
+        T entity = repo.findById(productId)
                 .orElseThrow(() -> new RuntimeException("Entity not found"));
         if (entity instanceof BaseEntity be) {
             be.setDeletedAt(Instant.now());
             repo.save(entity);
         } else {
-            repo.deleteById(id);
+            repo.deleteById(productId);
         }
     }
 

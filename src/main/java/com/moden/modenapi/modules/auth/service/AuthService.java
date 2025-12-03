@@ -1,18 +1,21 @@
 package com.moden.modenapi.modules.auth.service;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.UUID;
 import com.moden.modenapi.common.enums.Role;
-import com.moden.modenapi.common.utils.DisplayNameUtil;
+import com.moden.modenapi.common.utils.IdGenerator;
 import com.moden.modenapi.modules.auth.dto.AuthResponse;
-import com.moden.modenapi.modules.auth.dto.UserMeFullResponse;
+import com.moden.modenapi.modules.auth.dto.LoginResStudioAndDesigner;
+import com.moden.modenapi.modules.auth.dto.RegisterStudioReq;
+import com.moden.modenapi.modules.auth.dto.StudioCreatedResponse;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.modules.customer.dto.CustomerSignInRequest;
-import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
 import com.moden.modenapi.modules.designer.repository.DesignerDetailRepository;
+import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import com.moden.modenapi.security.JwtProvider;
 import org.springframework.http.HttpHeaders;
@@ -31,12 +34,12 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final AuthLocalService authLocalService;
     private final JwtProvider jwtProvider;
     private final HairStudioDetailRepository hairStudioDetailRepository;
     private final DesignerDetailRepository designerDetailRepository;
     private final CustomerDetailRepository customerDetailRepository;
     private final UserSessionService userSessionService;
+    private final AuthLocalService  authLocalService;
 
 
     // ----------------------------------------------------------------------
@@ -178,49 +181,43 @@ public class AuthService {
         return Role.CUSTOMER;
     }
 
-    public UserMeFullResponse getCurrentUserProfile(UUID userId, Role role) {
-        var user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        UUID detailId = null;
-        String detailName = null;
+    @Transactional
+    public StudioCreatedResponse registerStudio(RegisterStudioReq req) {
 
-        if (role == null) role = Role.CUSTOMER;
+        // 0) 로그인용 ID 생성 (예: ST-MONA-123456)
+        String studioLoginId = IdGenerator.generateStudioId(req.shopName());
 
-        switch (role) {
-            case CUSTOMER -> {
-                var cd = customerDetailRepository.findByUserId(userId).orElse(null);
-                if (cd != null) { detailId = cd.getId(); detailName = DisplayNameUtil.extract(cd); }
-            }
-            case DESIGNER -> {
-                var dd = designerDetailRepository.findByUserIdAndDeletedAtIsNull(userId).orElse(null);
-                if (dd != null) { detailId = dd.getId(); detailName = DisplayNameUtil.extract(dd); }
-            }
-            case HAIR_STUDIO -> {
-                var sd = hairStudioDetailRepository.findByUserIdAndDeletedAtIsNull(userId).orElse(null);
-                if (sd != null) { detailId = sd.getId(); detailName = DisplayNameUtil.extract(sd); }
-            }
-            case ADMIN -> {
-                // ❗ findProfileByUserId() proektsiyasida getId() bo'lmagani uchun
-                // vaqtincha foydalanuvchining ma'lumotlari bilan to'ldiramiz (yoki 5-banddagi projection’ni qo‘llang)
-                detailId = user.getId();
-                detailName = (user.getFullName() != null && !user.getFullName().isBlank())
-                        ? user.getFullName() : String.valueOf(user.getId());
-            }
-            default -> {}
-        }
-
-        if (detailName == null || detailName.isBlank()) detailName = user.getFullName();
-        if (detailName == null || detailName.isBlank()) detailName = String.valueOf(user.getId());
-
-        return UserMeFullResponse.builder()
-                .userId(user.getId())
-                .fullName(user.getFullName())
-                .phone(user.getPhone())
-                .role(role.name())
-                .detailId(detailId)
-                .detailName(detailName)
-                .createdAt(user.getCreatedAt())
+        // 1) User 생성
+        User newUser = User.builder()
+                .phone(req.ownerPhone())
+                .phoneVerified(true)
+                .phoneVerifiedAt(Instant.now())
+                .role(Role.HAIR_STUDIO)
                 .build();
+
+        User user = userRepository.save(newUser);
+
+        // 2) 비밀번호 저장
+        authLocalService.createOrUpdatePassword(user.getId(), req.password());
+
+        // 3) HairStudioDetail 저장
+        HairStudioDetail studio = HairStudioDetail.builder()
+                .userId(user.getId())
+                .idForLogin(studioLoginId)   // ★ 생성한 로그인 ID 사용
+                .businessNo(req.businessNo())
+                .ownerName(req.ownerName())
+                .build();
+        hairStudioDetailRepository.save(studio);
+
+        // 4) 응답 DTO 생성
+        return new StudioCreatedResponse(
+                user.getPhone(),      // ownerPhone
+                req.shopName(),       // shopName (원래 입력한 상호)
+                studioLoginId         // idForLogin (예: ST-MONA-123456)
+        );
     }
+
+
+
 }

@@ -13,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -45,11 +46,14 @@ public class PointService extends BaseService<Point> {
             case "TODAY" -> today.atStartOfDay(zone).toInstant();
             case "WEEK"  -> today.minusDays(6).atStartOfDay(zone).toInstant();   // 최근 7일
             case "MONTH" -> today.withDayOfMonth(1).atStartOfDay(zone).toInstant(); // 이번 달 1일
-            default -> null;  // ALL
+            default -> null;
         };
     }
 
     /* ================== Customer용 리스트 ================== */
+    // Agar timezone aniq bo‘lsa, shuni qo‘ying
+    private static final ZoneId ZONE_ID = ZoneId.of("Asia/Tashkent");
+    // private static final ZoneId ZONE_ID = ZoneId.systemDefault();
 
     @Transactional(readOnly = true)
     public List<PointCustomerRes> listForCustomer(UUID userId, PointType type, String period) {
@@ -64,13 +68,14 @@ public class PointService extends BaseService<Point> {
 
         return base.stream()
                 .filter(p -> {
-                    if (from == null) return true;
+                    if (from == null) return true;       // ALL
                     Instant c = p.getCreatedAt();
-                    return !c.isBefore(from);
+                    return !c.isBefore(from);             // createdAt >= from
                 })
                 .map(this::mapToCustomerRes)
                 .toList();
     }
+
 
     private String resolveServiceName(UUID paymentId) {
         if (paymentId == null) {
@@ -222,25 +227,4 @@ public class PointService extends BaseService<Point> {
         return new PointActiveSummaryRes(active);
     }
 
-
-    @Transactional(readOnly = true)
-    public List<PointRes> filterPoints(PointFilterReq req) {
-        if (req.userId() == null) {
-            throw new IllegalArgumentException("userId is required for filtering");
-        }
-
-        List<Point> base = pointRepository
-                .findAllByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(req.userId());
-
-        return base.stream()
-                .filter(p -> req.type() == null || p.getType() == req.type())
-                .filter(p -> {
-                    Instant c = p.getCreatedAt();
-                    if (req.from() != null && c.isBefore(req.from())) return false;
-                    if (req.to() != null && c.isAfter(req.to())) return false;
-                    return true;
-                })
-                .map(this::mapToRes)
-                .toList();
-    }
 }

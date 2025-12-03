@@ -2,12 +2,16 @@ package com.moden.modenapi.modules.consultation.dto;
 
 import com.moden.modenapi.common.enums.ConsultationStatus;
 import com.moden.modenapi.common.enums.PaymentStatus;
+import com.moden.modenapi.modules.consultation.model.Consultation;
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Builder;
 
+import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.UUID;
 
+@Builder
 @Schema(description = "상담 상세 응답 DTO")
 public record ConsultationRes(
 
@@ -26,8 +30,23 @@ public record ConsultationRes(
         @Schema(description = "서비스 이름 (시술명)")
         String serviceName,
 
-        String name, java.math.BigDecimal totalPayment, @Schema(description = "예약 일시 (날짜 + 시간)")
-        LocalDateTime reservationAt,
+        @Schema(description = "디자이너 직위")
+        String designerPosition,
+
+        @Schema(description = "헤어 스튜디오 이름")
+        String studioName,
+
+        @Schema(description = "총 결제 금액")
+        BigDecimal totalPayment,
+
+        @Schema(description = "예약 날짜")
+        LocalDate reservationDate,
+
+        @Schema(description = "예약 시작 시간")
+        String startTime,
+
+        @Schema(description = "예약 종료 시간")
+        String endTime,
 
         @Schema(
                 description = "상담 상태 (상담대기 / 상담완료 등)",
@@ -40,7 +59,6 @@ public record ConsultationRes(
                 implementation = PaymentStatus.class
         )
         PaymentStatus paymentStatus,
-
 
         @Schema(description = "고객이 원하는 스타일 이미지 URL")
         String wantedImageUrl,
@@ -68,4 +86,15 @@ public record ConsultationRes(
 
         @Schema(description = "삭제 시각 (soft delete, null 가능)")
         Instant deletedAt
-) {}
+) {
+    public static ConsultationRes from(Consultation c) {
+        return ConsultationRes.builder()
+                .id(c.getId())
+                .reservationId(c.getReservationId())
+                .status(c.getStatus())
+                .beforeImageUrl(c.getBeforeImageUrl())
+                .afterImageUrl(c.getAfterImageUrl())
+                .consultationMemo(c.getConsultationMemo())
+                .build();
+    }
+}

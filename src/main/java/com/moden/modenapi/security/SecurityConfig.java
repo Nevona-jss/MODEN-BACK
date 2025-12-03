@@ -60,13 +60,10 @@ public class SecurityConfig {
                                 "/api/auth/refresh"
                         ).permitAll()
 
-                        // 스튜디오가 고객 등록하는 엔드포인트 (로그인 된 스튜디오만)
-                        .requestMatchers(HttpMethod.POST, "/api/studios/customers/register").hasRole("HAIR_STUDIO")
-
                         // 역할별 보호
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/designers/**").hasRole("DESIGNER")
-                        .requestMatchers("/api/studios/**").hasRole("HAIR_STUDIO")
+                        .requestMatchers("/api/studios/**").hasAnyRole("DESIGNER","HAIR_STUDIO")
                         .requestMatchers("/api/customers/**").hasRole("CUSTOMER")
                         .requestMatchers("/swagger-ui/**", "/api-docs/**").permitAll()
                         // 그 외
@@ -85,7 +82,10 @@ public class SecurityConfig {
         var cfg = new CorsConfiguration();
         // 예시: 필요한 도메인만 명시
         cfg.setAllowedOriginPatterns(List.of(
-                "http://localhost:5173"
+                "http://192.168.1.24:5173",
+                "http://localhost:5173",
+                "http://122.37.246.79:7006",
+                "http://122.37.246.79:7007"
         ));
         cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));

@@ -8,9 +8,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(description = "Customer sign-in request (by name and phone)")
 public record CustomerSignInRequest(
 
-        @Schema(description = "Customer's full name", example = "홍길동")
+        @Schema(description = "Customer's full name", example = "Harry")
         String fullName,
 
-        @Schema(description = "Customer's phone number", example = "01012345678")
+        @Schema(description = "Customer's phone number", example = "123456789")
         String phone
 ) {}

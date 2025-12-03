@@ -21,9 +21,6 @@ public class Coupon extends BaseEntity {
     @Column(name = "studio_id", columnDefinition = "uniqueidentifier", nullable = false)
     private UUID studioId;
 
-    @Column(name = "user_id", columnDefinition = "uniqueidentifier", nullable = false)
-    private UUID userId;
-
     @Column(nullable = false, length = 100)
     private String name;
 
@@ -33,6 +30,10 @@ public class Coupon extends BaseEntity {
     @Column(name = "discount_amount")
     private BigDecimal discountAmount;
 
+    @Lob
+    private String description;
+
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private CouponStatus status = CouponStatus.AVAILABLE;
@@ -43,13 +44,7 @@ public class Coupon extends BaseEntity {
     @Column(name = "expiry_date")
     private LocalDate expiryDate;
 
-    @Column(name = "is_birthday_coupon")
-    private boolean birthdayCoupon = false;
+    @Column(name = "used_date")
+    private LocalDate usedDate;
 
-    @Column(name = "is_first_visit_coupon")
-    private boolean firstVisitCoupon = false;
-
-    // 🔴 global/personal flag
-    @Column(name = "is_global", nullable = false)
-    private boolean isGlobal = true; // default: global, personal bo'lsa false qilib qo'yamiz
 }

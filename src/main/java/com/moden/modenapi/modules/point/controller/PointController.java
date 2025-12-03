@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "HAIR STUDIO POINT", description = "Studio side point management API")
+@Tag(name = "POINT", description = "Studio side point management API")
 @RestController
 @RequestMapping("/api/studios/points")
 @RequiredArgsConstructor
@@ -28,7 +28,7 @@ public class PointController {
     private final StudioPointPolicyService studioPointPolicyService;
     private final CustomerService customerService;
 
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Get point policy for current studio")
     @GetMapping("/policy/get")
     public ResponseEntity<ResponseMessage<StudioPointPolicyRes>> getMyStudioPolicy() {
@@ -37,7 +37,7 @@ public class PointController {
         return ResponseEntity.ok(ResponseMessage.success("Point policy loaded", res));
     }
 
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Create or update point policy for current studio")
     @PatchMapping ("/policy/update")
     public ResponseEntity<ResponseMessage<StudioPointPolicyRes>> updateMyStudioPolicy(
@@ -47,6 +47,8 @@ public class PointController {
         var res = studioPointPolicyService.upsertPolicy(studioId, req);
         return ResponseEntity.ok(ResponseMessage.success("Point policy updated", res));
     }
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Get point by ID")
     @GetMapping("/get/{pointId}")
     public ResponseEntity<ResponseMessage<PointRes>> get(@PathVariable UUID pointId) {
@@ -54,6 +56,7 @@ public class PointController {
         return ResponseEntity.ok(ResponseMessage.success(res));
     }
 
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Soft delete a point record")
     @DeleteMapping("/delete/{pointId}")
     public ResponseEntity<Void> delete(@PathVariable UUID pointId) {
@@ -73,7 +76,7 @@ public class PointController {
     }
 
     // 🔹 STUDIO: berilgan userId bo'yicha, shu studiyoga tegishli customer point history
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
             summary = "List points for a customer (by userId)",
             description = "Studio userId kiritganda, agar shu customer studiyoga tegishli bo'lsa, uning barcha pointlari qaytadi."
@@ -93,7 +96,7 @@ public class PointController {
     }
 
     // 🔹 STUDIO: berilgan userId bo'yicha point summary (earned/used/balance)
-    @PreAuthorize("hasRole('HAIR_STUDIO')")
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
             summary = "Point summary for a customer (by userId)",
             description = "Studio userId kiritganda, shu customer uchun earned/used/balance qaytadi."

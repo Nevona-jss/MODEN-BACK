@@ -1,15 +1,14 @@
 package com.moden.modenapi.modules.payment.service;
 
+import com.moden.modenapi.common.enums.CouponStatus;
 import com.moden.modenapi.common.enums.PaymentStatus;
 import com.moden.modenapi.common.enums.PointType;
-import com.moden.modenapi.common.enums.ServiceType;
 import com.moden.modenapi.common.service.BaseService;
 import com.moden.modenapi.modules.coupon.model.Coupon;
+import com.moden.modenapi.modules.coupon.model.CustomerCoupon;
 import com.moden.modenapi.modules.coupon.repository.CouponRepository;
-import com.moden.modenapi.modules.payment.dto.DesignerTipSummaryRes;
-import com.moden.modenapi.modules.payment.dto.PaymentCreateReq;
-import com.moden.modenapi.modules.payment.dto.PaymentRes;
-import com.moden.modenapi.modules.payment.dto.TodaySalesSummaryRes;
+import com.moden.modenapi.modules.coupon.repository.CustomerCouponRepository;
+import com.moden.modenapi.modules.payment.dto.*;
 import com.moden.modenapi.modules.payment.model.Payment;
 import com.moden.modenapi.modules.payment.repository.PaymentRepository;
 import com.moden.modenapi.modules.point.model.Point;
@@ -31,10 +30,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -47,13 +43,12 @@ public class PaymentService extends BaseService<Payment> {
     private final StudioServiceRepository studioServiceRepository;
     private final PointRepository pointRepository;
     private final CouponRepository couponRepository;
+    private final CustomerCouponRepository customerCouponRepository;
 
     @Override
     protected JpaRepository<Payment, UUID> getRepository() {
         return paymentRepository;
     }
-
-
 
     // ------------------------------ //
     // 1) 예약 생성 시 UNPAID Payment 생성
@@ -70,10 +65,9 @@ public class PaymentService extends BaseService<Payment> {
 
         Payment payment = Payment.builder()
                 .reservationId(reservation.getId())
-                .paymentStatus(PaymentStatus.UNPAID)
+                .paymentStatus(PaymentStatus.PENDING)
                 .serviceTotal(servicePrice)
                 .productTotal(BigDecimal.ZERO)
-                .couponDiscount(BigDecimal.ZERO)
                 .pointsUsed(BigDecimal.ZERO)
                 .totalAmount(servicePrice) // 처음엔 서비스 금액 그대로
                 .build();
@@ -95,7 +89,7 @@ public class PaymentService extends BaseService<Payment> {
     }
 
     // ------------------------------ //
-    // 3) 결제 확정 (포인트 + 쿠폰 적용)
+    // 3) 결제 확정 (포인트 + 쿠폰 + Tip 계산)
     // ------------------------------ //
     public PaymentRes confirmPayment(PaymentCreateReq req) {
 
@@ -116,7 +110,7 @@ public class PaymentService extends BaseService<Payment> {
                         "해당 서비스 정보를 찾을 수 없습니다. serviceId=" + reservation.getServiceId()
                 ));
 
-        BigDecimal servicePrice = studioService.getServicePrice();
+        BigDecimal servicePrice = defaultZero(studioService.getServicePrice());
         BigDecimal productTotal = defaultZero(req.productTotal());
 
         // 서비스 + 제품 = 기본 합계
@@ -157,29 +151,16 @@ public class PaymentService extends BaseService<Payment> {
                             "해당 쿠폰을 찾을 수 없습니다. couponId=" + couponId
                     ));
 
-            // 쿠폰 유효성 체크 (status, 날짜, 고객 혹은 global 여부)
+            // 쿠폰 유효성 체크 (상태 + 날짜)
             validateCouponForCustomer(coupon, customerId);
 
             BigDecimal base = afterPoint; // 포인트 적용 후 금액 기준
-
-            BigDecimal rateDiscount = BigDecimal.ZERO;
-            if (coupon.getDiscountRate() != null) {
-                rateDiscount = base
-                        .multiply(coupon.getDiscountRate())
-                        .divide(BigDecimal.valueOf(100), 0, RoundingMode.FLOOR); // 원화 기준 0원 단위
-            }
-
-            BigDecimal fixedDiscount = defaultZero(coupon.getDiscountAmount());
-
-            couponDiscount = rateDiscount.add(fixedDiscount);
-
-            // 할인 금액이 base 보다 클 수 없게
-            if (couponDiscount.compareTo(base) > 0) {
-                couponDiscount = base;
-            }
+            couponDiscount = computeCouponDiscount(base, coupon);
 
             // 쿠폰 상태 변경 (USED)
-            coupon.setStatus(com.moden.modenapi.common.enums.CouponStatus.USED);
+            coupon.setStatus(CouponStatus.USED);
+            coupon.setUsedDate(LocalDate.now(ZoneId.of("Asia/Tashkent")));
+            couponRepository.save(coupon);
         }
 
         // 3-5) 최종 지불 금액
@@ -188,7 +169,19 @@ public class PaymentService extends BaseService<Payment> {
             finalAmount = BigDecimal.ZERO;
         }
 
-        // 3-6) Payment 엔티티 가져오기 (없으면 생성)
+        // 3-6) 디자이너 Tip 계산 (service + product 기준)
+        BigDecimal tipPercent = defaultZero(studioService.getDesignerTipPercent());
+        // Tip = (서비스 + 제품) * tipPercent / 100
+        BigDecimal tipBase = servicePrice.add(productTotal);
+        if (tipBase.compareTo(BigDecimal.ZERO) < 0) {
+            tipBase = BigDecimal.ZERO;
+        }
+
+        BigDecimal designerTip = tipBase
+                .multiply(tipPercent)
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.FLOOR);
+
+        // 3-7) Payment 엔티티 가져오기 (없으면 생성 → UPDATE 형태로 사용)
         Payment payment = paymentRepository.findByReservationId(req.reservationId())
                 .orElseGet(() -> Payment.builder()
                         .reservationId(reservation.getId())
@@ -198,15 +191,15 @@ public class PaymentService extends BaseService<Payment> {
         payment.setServiceTotal(servicePrice);
         payment.setProductTotal(productTotal);
         payment.setPointsUsed(pointsToUse);
-        payment.setCouponDiscount(couponDiscount);
         payment.setTotalAmount(finalAmount);
         payment.setPaymentMethod(req.paymentMethod());
         payment.setPaymentStatus(PaymentStatus.PAID);
         payment.setCouponId(couponId);
+        payment.setDesignerTipAmount(designerTip);   // ✅ Tip 저장
 
         Payment saved = paymentRepository.save(payment);
 
-        // 3-7) 포인트 USE 기록 남기기
+        // 3-8) 포인트 USE 기록 남기기
         if (pointsToUse.compareTo(BigDecimal.ZERO) > 0) {
             Point usePoint = Point.builder()
                     .userId(customerId)
@@ -246,47 +239,136 @@ public class PaymentService extends BaseService<Payment> {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    /** 쿠폰이 해당 고객에게 유효한지 검증 (개인 쿠폰 or studio global 쿠폰) */
+    /**
+     * 쿠폰이 "사용 가능한 상태인지" 간단히 검증
+     *  - 상태: AVAILABLE
+     *  - 날짜: startDate ~ expiryDate 범위
+     *  - customerId 는 현재는 비즈니스 제약에 사용하지 않고, 향후 확장 여지로 둠
+     */
     private void validateCouponForCustomer(Coupon coupon, UUID customerId) {
 
-        // 상태 체크
-        if (coupon.getStatus() != com.moden.modenapi.common.enums.CouponStatus.AVAILABLE) {
+        if (coupon.getStatus() != CouponStatus.AVAILABLE) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "사용할 수 없는 쿠폰입니다. (status=" + coupon.getStatus() + ")"
+                    "현재 상태에서 사용할 수 없는 쿠폰입니다."
             );
         }
 
-        // 날짜 체크
-        LocalDate today = LocalDate.now();
-        if (coupon.getStartDate() != null && today.isBefore(coupon.getStartDate())) {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Tashkent"));
+
+        if (coupon.getStartDate() != null && coupon.getStartDate().isAfter(today)) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "아직 사용 시작 전인 쿠폰입니다."
             );
         }
-        if (coupon.getExpiryDate() != null && today.isAfter(coupon.getExpiryDate())) {
+        if (coupon.getExpiryDate() != null && coupon.getExpiryDate().isBefore(today)) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "이미 만료된 쿠폰입니다."
             );
         }
 
-        // 고객 전용 쿠폰인가 / 스튜디오 global 쿠폰인가
-        if (!coupon.isGlobal()) {
-            // personal 쿠폰이면 userId 매칭 확인
-            if (!coupon.getUserId().equals(customerId)) {
-                throw new ResponseStatusException(
-                        HttpStatus.FORBIDDEN,
-                        "이 쿠폰은 해당 고객이 사용할 수 없습니다."
-                );
-            }
-        } else {
-            // global 이면 userId는 크게 상관없지만, 필요하면 studioId 매칭 등 추가 가능
+        // TODO: 필요하면 customerId 기반 추가 제약 (특정 고객만 사용 가능 등)을 여기서 확장
+    }
+
+    // cc: CustomerCoupon, coupon: Coupon, customerId: 현재 로그인 고객 ID
+    private void validateCustomerCanUseCoupon(CustomerCoupon cc, Coupon coupon, UUID customerId) {
+        // 1) 이 쿠폰 소유 고객인지 확인
+        if (!cc.getCustomerId().equals(customerId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "이 쿠폰은 해당 고객의 쿠폰이 아닙니다."
+            );
+        }
+
+        // 2) studio 일치 확인 (쿠폰 정책과 발급된 쿠폰이 같은 헤어샵인지)
+        if (!coupon.getStudioId().equals(cc.getStudioId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "쿠폰 정보와 발급 정보의 스튜디오가 일치하지 않습니다."
+            );
+        }
+
+        // 3) 상태 확인
+        if (coupon.getStatus() != CouponStatus.AVAILABLE) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "현재 상태에서 사용할 수 없는 쿠폰입니다."
+            );
+        }
+
+        // 4) 날짜 유효성 (오늘 기준 사용 가능 기간인지)
+        var today = LocalDate.now(ZoneId.of("Asia/Tashkent"));
+
+        if (coupon.getStartDate() != null && coupon.getStartDate().isAfter(today)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "아직 사용 시작 전인 쿠폰입니다."
+            );
+        }
+        if (coupon.getExpiryDate() != null && coupon.getExpiryDate().isBefore(today)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "이미 만료된 쿠폰입니다."
+            );
         }
     }
 
+    public void useCoupon(UUID customerCouponId, UUID currentCustomerId) {
+        CustomerCoupon cc = customerCouponRepository.findByIdAndDeletedAtIsNull(customerCouponId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰을 찾을 수 없습니다."));
+
+        Coupon coupon = couponRepository.findByIdAndDeletedAtIsNull(cc.getCouponId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰 정책을 찾을 수 없습니다."));
+
+        validateCustomerCanUseCoupon(cc, coupon, currentCustomerId);
+
+        // 이후 실제 사용 처리 (상태 변경, usedDate 세팅 등)
+        coupon.setStatus(CouponStatus.USED);
+        coupon.setUsedDate(LocalDate.now(ZoneId.of("Asia/Tashkent")));
+        couponRepository.save(coupon);
+    }
+
+    /**
+     * 쿠폰 할인 계산 (정율 + 정액 모두 적용)
+     * base: 포인트 적용 후 금액
+     */
+    private BigDecimal computeCouponDiscount(BigDecimal base, Coupon coupon) {
+        if (coupon == null || base == null || base.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal rateDiscount = BigDecimal.ZERO;
+        BigDecimal amountDiscount = BigDecimal.ZERO;
+
+        if (coupon.getDiscountRate() != null) {
+            rateDiscount = base
+                    .multiply(coupon.getDiscountRate())
+                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.FLOOR);
+        }
+
+        if (coupon.getDiscountAmount() != null) {
+            amountDiscount = coupon.getDiscountAmount();
+        }
+
+        BigDecimal totalDiscount = rateDiscount.add(amountDiscount);
+
+        if (totalDiscount.compareTo(base) > 0) {
+            totalDiscount = base;
+        }
+        if (totalDiscount.compareTo(BigDecimal.ZERO) < 0) {
+            totalDiscount = BigDecimal.ZERO;
+        }
+
+        return totalDiscount;
+    }
+
+    // 🔹 Payment → PaymentRes 변환 시 couponDiscount 는 couponId 기반으로 다시 계산
     private PaymentRes toDto(Payment p) {
+
+        BigDecimal couponDiscount = calcCouponDiscountFromPayment(p);
+
         return new PaymentRes(
                 p.getId(),
                 p.getReservationId(),
@@ -294,34 +376,61 @@ public class PaymentService extends BaseService<Payment> {
                 p.getPaymentMethod(),
                 p.getServiceTotal(),
                 p.getProductTotal(),
-                p.getCouponDiscount(),
+                couponDiscount,
                 p.getPointsUsed(),
                 p.getTotalAmount(),
+                p.getDesignerTipAmount(),
                 p.getCreatedAt(),
                 p.getUpdatedAt()
         );
     }
 
+    /** couponId, rate, amount 기반으로 할인 금액 재계산 */
+    private BigDecimal calcCouponDiscountFromPayment(Payment p) {
+        UUID couponId = p.getCouponId();
+        if (couponId == null) {
+            return BigDecimal.ZERO;
+        }
+
+        Coupon coupon = couponRepository.findById(couponId).orElse(null);
+        if (coupon == null) {
+            return BigDecimal.ZERO;
+        }
+
+        // "서비스 + 제품 - 포인트" 기준으로 다시 계산
+        BigDecimal base = defaultZero(p.getServiceTotal())
+                .add(defaultZero(p.getProductTotal()))
+                .subtract(defaultZero(p.getPointsUsed()));
+
+        if (base.compareTo(BigDecimal.ZERO) < 0) {
+            base = BigDecimal.ZERO;
+        }
+
+        return computeCouponDiscount(base, coupon);
+    }
 
     // ------------------------------
-    // 1) Payment list filter – studio / designer / serviceType / status / date range
+    // Payment list / summary 부분 (기존 코드 정리)
     // ------------------------------
     @Transactional(readOnly = true)
     public List<PaymentRes> searchPaymentsForList(
             UUID studioId,
             UUID designerId,
-            ServiceType serviceType,
+            String serviceName,
             PaymentStatus status,
             LocalDateTime from,
             LocalDateTime to
     ) {
+        LocalDate fromDate = (from != null) ? from.toLocalDate() : null;
+        LocalDate toDate   = (to != null)   ? to.toLocalDate()   : null;
+
         List<Payment> list = paymentRepository.searchPayments(
                 studioId,
                 designerId,
-                serviceType,
+                serviceName,
                 status,
-                from,
-                to
+                fromDate,
+                toDate
         );
 
         return list.stream()
@@ -329,9 +438,6 @@ public class PaymentService extends BaseService<Payment> {
                 .toList();
     }
 
-    // ------------------------------
-    // 2) Studio uchun: Designer bo‘yicha tip summary
-    // ------------------------------
     @Transactional(readOnly = true)
     public List<DesignerTipSummaryRes> studioDesignerTipSummary(
             UUID studioId,
@@ -339,44 +445,29 @@ public class PaymentService extends BaseService<Payment> {
             LocalDateTime from,
             LocalDateTime to
     ) {
-        // Tip summary, odatda faqat PAID paymentlardan
+        LocalDate fromDate = (from != null) ? from.toLocalDate() : null;
+        LocalDate toDate   = (to != null)   ? to.toLocalDate()   : null;
+
         List<Payment> payments = paymentRepository.searchPayments(
                 studioId,
                 designerId,
-                null,                    // serviceType filter yo‘q
-                PaymentStatus.PAID,      // faqat to‘langanlar
-                from,
-                to
+                null,
+                PaymentStatus.PAID,
+                fromDate,
+                toDate
         );
 
-        // designerId -> tipSum
         Map<UUID, BigDecimal> tipMap = new HashMap<>();
 
         for (Payment p : payments) {
-            // Reservation orqali designerId va serviceId olamiz
             Reservation r = reservationRepository.findById(p.getReservationId())
                     .orElseThrow(() -> new ResponseStatusException(
                             HttpStatus.NOT_FOUND,
                             "Payment에 연결된 예약을 찾을 수 없습니다. paymentId=" + p.getId()
                     ));
 
-            StudioService service = studioServiceRepository.findById(r.getServiceId())
-                    .orElseThrow(() -> new ResponseStatusException(
-                            HttpStatus.NOT_FOUND,
-                            "해당 서비스 정보를 찾을 수 없습니다. serviceId=" + r.getServiceId()
-                    ));
-
-            BigDecimal tipPercent = service.getDesignerTipPercent();
-            if (tipPercent == null) {
-                tipPercent = BigDecimal.ZERO;
-            }
-
-            // Tip = serviceTotal * tipPercent / 100
-            BigDecimal tip = p.getServiceTotal()
-                    .multiply(tipPercent)
-                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.FLOOR);
-
             UUID dId = r.getDesignerId();
+            BigDecimal tip = defaultZero(p.getDesignerTipAmount());
             tipMap.merge(dId, tip, BigDecimal::add);
         }
 
@@ -384,15 +475,10 @@ public class PaymentService extends BaseService<Payment> {
                 .map(e -> new DesignerTipSummaryRes(
                         e.getKey(),
                         e.getValue(),
-                        e.getValue()      // 지금은 전체 팁 = 서비스 팁
+                        e.getValue()
                 ))
                 .collect(Collectors.toList());
     }
-
-
-    // ==========================
-    // 오늘 총 매출/건수/평균 단가
-    // ==========================
 
     @Transactional(readOnly = true)
     public TodaySalesSummaryRes getTodaySummary(UUID studioId) {
@@ -403,7 +489,6 @@ public class PaymentService extends BaseService<Payment> {
         Instant start = today.atStartOfDay(zone).toInstant();
         Instant end = today.plusDays(1).atStartOfDay(zone).toInstant();
 
-        // 🔹 항상 List<Object[]> 로 받는다
         List<Object[]> rows = paymentRepository.aggregateSalesForPeriod(
                 studioId,
                 PaymentStatus.PAID,
@@ -413,15 +498,10 @@ public class PaymentService extends BaseService<Payment> {
 
         Object[] row;
         if (rows == null || rows.isEmpty()) {
-            // 결과가 아예 없을 때
             row = new Object[]{null, 0L, null};
         } else {
             row = rows.get(0);
         }
-
-        // row[0] = sum(totalAmount)
-        // row[1] = count(*)
-        // row[2] = avg(totalAmount)
 
         BigDecimal totalSales = toBigDecimal(row[0]);
         long paymentCount = (row[1] == null) ? 0L : ((Number) row[1]).longValue();
@@ -429,7 +509,6 @@ public class PaymentService extends BaseService<Payment> {
         BigDecimal averageAmount = BigDecimal.ZERO;
         if (paymentCount > 0) {
             averageAmount = toBigDecimal(row[2]);
-            // 통화 기준이면 소수점 0자리로 맞추거나 필요에 따라 scale 조정
             averageAmount = averageAmount.setScale(0, RoundingMode.HALF_UP);
         }
 
@@ -441,20 +520,16 @@ public class PaymentService extends BaseService<Payment> {
         );
     }
 
-    /**
-     * 다양한 형태의 숫자(Object, Number, Object[]) 를 BigDecimal 로 안전하게 변환
-     */
     private BigDecimal toBigDecimal(Object value) {
         if (value == null) {
             return BigDecimal.ZERO;
         }
 
-        // 🔹 만약 또 Object[] 한 번 더 감싸져 있으면 첫 번째 요소를 다시 처리
         if (value instanceof Object[] arr) {
             if (arr.length == 0) {
                 return BigDecimal.ZERO;
             }
-            return toBigDecimal(arr[0]); // 재귀 한 번 더
+            return toBigDecimal(arr[0]);
         }
 
         if (value instanceof BigDecimal bd) {
@@ -465,16 +540,135 @@ public class PaymentService extends BaseService<Payment> {
             return BigDecimal.valueOf(n.doubleValue());
         }
 
-        // 여기에 걸리면 진짜 이상한 타입이 들어온 것
         throw new IllegalArgumentException("Unexpected numeric type: " + value.getClass());
     }
-
 
     @Transactional(readOnly = true)
     public PaymentStatus getPaymentStatusByReservationId(UUID reservationId) {
         return paymentRepository.findByReservationId(reservationId)
                 .map(Payment::getPaymentStatus)
-                // payment 가 아직 없으면 UNPAID 로 보고 싶으면 기본값을 UNPAID 로
-                .orElse(PaymentStatus.UNPAID);
+                .orElse(PaymentStatus.PENDING);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PaymentListItemRes> getStudioPaymentList(
+            UUID studioId,
+            UUID designerId,
+            String serviceName,
+            LocalDateTime from,
+            LocalDateTime to,
+            PaymentStatus status,
+            int page,
+            int size
+    ) {
+        LocalDate fromDate = (from != null) ? from.toLocalDate() : null;
+        LocalDate toDate   = (to != null)   ? to.toLocalDate()   : null;
+
+        List<Payment> payments = paymentRepository.searchPayments(
+                studioId,
+                designerId,
+                serviceName,
+                status,
+                fromDate,
+                toDate
+        );
+
+        List<PaymentListItemRes> all = payments.stream()
+                .map(p -> {
+                    Reservation r = reservationRepository.findById(p.getReservationId())
+                            .orElseThrow(() -> new ResponseStatusException(
+                                    HttpStatus.NOT_FOUND,
+                                    "Payment에 연결된 예약을 찾을 수 없습니다. paymentId=" + p.getId()
+                            ));
+
+                    StudioService s = studioServiceRepository.findById(r.getServiceId())
+                            .orElseThrow(() -> new ResponseStatusException(
+                                    HttpStatus.NOT_FOUND,
+                                    "해당 서비스 정보를 찾을 수 없습니다. serviceId=" + r.getServiceId()
+                            ));
+
+                    return toListItemDto(p, r, s);
+                })
+                .toList();
+
+        return paginate(all, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PaymentListItemRes> getDesignerPaymentList(
+            UUID designerId,
+            String serviceName,
+            LocalDateTime from,
+            LocalDateTime to,
+            PaymentStatus status,
+            int page,
+            int size
+    ) {
+        LocalDate fromDate = (from != null) ? from.toLocalDate() : null;
+        LocalDate toDate   = (to != null)   ? to.toLocalDate()   : null;
+
+        List<Payment> payments = paymentRepository.searchPayments(
+                null,
+                designerId,
+                serviceName,
+                status,
+                fromDate,
+                toDate
+        );
+
+        List<PaymentListItemRes> all = payments.stream()
+                .map(p -> {
+                    Reservation r = reservationRepository.findById(p.getReservationId())
+                            .orElseThrow(() -> new ResponseStatusException(
+                                    HttpStatus.NOT_FOUND,
+                                    "Payment에 연결된 예약을 찾을 수 없습니다. paymentId=" + p.getId()
+                            ));
+
+                    StudioService s = studioServiceRepository.findById(r.getServiceId())
+                            .orElseThrow(() -> new ResponseStatusException(
+                                    HttpStatus.NOT_FOUND,
+                                    "해당 서비스 정보를 찾을 수 없습니다. serviceId=" + r.getServiceId()
+                            ));
+
+                    return toListItemDto(p, r, s);
+                })
+                .toList();
+
+        return paginate(all, page, size);
+    }
+
+    private List<PaymentListItemRes> paginate(List<PaymentListItemRes> list, int page, int size) {
+        if (page < 0) page = 0;
+        if (size <= 0) size = 10;
+        if (size > 10) size = 10;
+
+        int fromIndex = page * size;
+        if (fromIndex >= list.size()) {
+            return List.of();
+        }
+
+        int toIndex = Math.min(fromIndex + size, list.size());
+        return list.subList(fromIndex, toIndex);
+    }
+
+    private PaymentListItemRes toListItemDto(Payment p, Reservation r, StudioService s) {
+
+        String customerFullName = null;
+        String designerFullName = null;
+
+        Instant consultCompletedAt = null;
+        // 필요하면 reservation의 일시 필드 매핑
+
+        return new PaymentListItemRes(
+                p.getId(),
+                p.getReservationId(),
+                consultCompletedAt,
+                customerFullName,
+                designerFullName,
+                s.getServiceName(),
+                p.getTotalAmount(),
+                p.getPaymentStatus(),
+                p.getDesignerTipAmount()
+        );
     }
 }

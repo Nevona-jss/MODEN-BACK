@@ -1,4 +1,4 @@
-package com.moden.modenapi.common.utils;
+package com.moden.modenapi.common.service;
 
 import com.moden.modenapi.modules.coupon.model.Coupon;
 import com.moden.modenapi.modules.coupon.service.CustomerCouponService;
@@ -15,6 +15,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor

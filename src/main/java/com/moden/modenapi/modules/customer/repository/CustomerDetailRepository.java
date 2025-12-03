@@ -50,6 +50,7 @@ public interface CustomerDetailRepository extends BaseRepository<CustomerDetail,
             @Param("day") int day
     );
 
+
     @Query("""
         select c
         from CustomerDetail c

@@ -6,66 +6,110 @@ import com.moden.modenapi.modules.consultation.model.Consultation;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface ConsultationRepository extends BaseRepository<Consultation, UUID> {
 
-    // 예약 ID 기준 단건 조회 (1:1 이라고 가정)
     Optional<Consultation> findByReservationId(UUID reservationId);
 
-    // 상담 상태별 목록 조회 (상담대기 / 상담완료 등)
-    List<Consultation> findByStatus(ConsultationStatus status);
-
-    // 여러 예약 ID 에 대한 상담 목록 (디자이너별 조회 등에 활용 가능)
     List<Consultation> findByReservationIdIn(List<UUID> reservationIds);
 
 
+    /**
+     * Customer + optional filters: status, createdAt interval
+     * (soft-delete = NULL)
+     */
+    @Query("""
+      SELECT c
+      FROM Consultation c
+      JOIN Reservation r ON c.reservationId = r.id
+      WHERE r.customerId = :customerId
+        AND c.deletedAt IS NULL
+        AND (:status IS NULL OR c.status = :status)
+        AND (:from IS NULL OR c.createdAt >= :from)
+        AND (:to   IS NULL OR c.createdAt < :to)
+      ORDER BY c.createdAt DESC
+    """)
+    List<Consultation> findForCustomerWithFilters(
+            @Param("customerId") UUID customerId,
+            @Param("status") ConsultationStatus status,
+            @Param("from") Instant from,
+            @Param("to") Instant to
+    );
 
     /**
-     * 현재 로그인한 고객 기준 상담 목록 동적 조회 (native query)
-     * - customerId: 필수 (항상 내 것만)
-     * - serviceId: 옵션 (null이면 전체)
-     * - from: 옵션 (null이면 시작 제한 없음)
-     * - to: 옵션 (null이면 끝 제한 없음, [from, to) 범위)
+     * Dynamic filter for customers (service, reservation date, etc.) – native query version
      */
     @Query(
             value = """
-            SELECT c.*
-            FROM consultation c
-            JOIN reservation r ON r.id = c.reservation_id
-            WHERE r.customer_id = :customerId
-              AND (:serviceId IS NULL OR r.service_id = :serviceId)
-              AND (:from IS NULL OR r.reservation_at >= :from)
-              AND (:to   IS NULL OR r.reservation_at < :to)
-              AND (c.deleted_at IS NULL)
-            ORDER BY r.reservation_at DESC, c.created_at DESC
-            """,
+      SELECT c.* FROM consultation c
+      INNER JOIN reservation r ON r.id = c.reservation_id
+      INNER JOIN studio_service s ON s.id = r.service_id
+      WHERE r.customer_id = :customerId
+        AND (:serviceId IS NULL OR r.service_id = :serviceId)
+        AND (:serviceNameKeyword IS NULL OR s.service_name LIKE '%' + :serviceNameKeyword + '%')
+        AND (:fromDate IS NULL OR r.reservation_date >= :fromDate)
+        AND (:toDate   IS NULL OR r.reservation_date <  :toDate)
+        AND c.deleted_at IS NULL
+      ORDER BY r.reservation_date DESC, r.start_time DESC, c.created_at DESC
+      """,
             nativeQuery = true
     )
     List<Consultation> searchDynamicForCustomer(
             @Param("customerId") UUID customerId,
             @Param("serviceId") UUID serviceId,
-            @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to
+            @Param("serviceNameKeyword") String serviceNameKeyword,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate
     );
 
     @Query(
             value = """
-        SELECT c.*
-        FROM consultation c
-        JOIN reservation r ON r.id = c.reservation_id
-        WHERE (:designerId IS NULL OR r.designer_id = :designerId)
-          AND (:customerId IS NULL OR r.customer_id = :customerId)
-          AND (:serviceId  IS NULL OR r.service_id  = :serviceId)
-          AND (:status     IS NULL OR c.status      = :status)
-          AND (:from       IS NULL OR r.reservation_at >= :from)
-          AND (:to         IS NULL OR r.reservation_at <  :to)
-          AND (c.deleted_at IS NULL)
-        ORDER BY r.reservation_at DESC, c.created_at DESC
-        """,
+      SELECT c.* FROM consultation c
+      INNER JOIN reservation r ON r.id = c.reservation_id
+      INNER JOIN studio_service s ON s.id = r.service_id
+      WHERE (:designerId IS NULL OR c.designer_id = :designerId)
+        AND (:customerId IS NULL OR r.customer_id = :customerId)
+        AND (:serviceId  IS NULL OR r.service_id  = :serviceId)
+        AND (:serviceNameKeyword IS NULL OR s.service_name LIKE '%' + :serviceNameKeyword + '%')
+        AND (:status     IS NULL OR c.status = :status)
+        AND (:fromDate   IS NULL OR r.reservation_date >= :fromDate)
+        AND (:toDate     IS NULL OR r.reservation_date <  :toDate)
+        AND c.deleted_at IS NULL
+      ORDER BY r.reservation_date DESC, r.start_time DESC, c.created_at DESC
+      """,
+            nativeQuery = true
+    )
+    List<Consultation> searchDynamicForStaff(
+            @Param("designerId") UUID designerId,
+            @Param("customerId") UUID customerId,
+            @Param("serviceId") UUID serviceId,
+            @Param("serviceNameKeyword") String serviceNameKeyword,
+            @Param("status") ConsultationStatus status,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate
+    );
+
+    /**
+     * Dynamic filter for staff: designerId, customerId, serviceId, date range, status — native version
+     */
+    @Query(
+            value = """
+      SELECT c.* FROM consultation c
+      INNER JOIN reservation r ON r.id = c.reservation_id
+      WHERE (:designerId IS NULL OR c.designer_id = :designerId)
+        AND (:customerId IS NULL OR r.customer_id = :customerId)
+        AND (:serviceId  IS NULL OR r.service_id  = :serviceId)
+        AND (:status     IS NULL OR c.status = :status)
+        AND (:fromDate   IS NULL OR r.reservation_date >= :fromDate)
+        AND (:toDate     IS NULL OR r.reservation_date <  :toDate)
+        AND c.deleted_at IS NULL
+      ORDER BY r.reservation_date DESC, r.start_time DESC, c.created_at DESC
+      """,
             nativeQuery = true
     )
     List<Consultation> searchDynamicForStaff(
@@ -73,9 +117,10 @@ public interface ConsultationRepository extends BaseRepository<Consultation, UUI
             @Param("customerId") UUID customerId,
             @Param("serviceId") UUID serviceId,
             @Param("status") ConsultationStatus status,
-            @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate
     );
+
 
 
 }

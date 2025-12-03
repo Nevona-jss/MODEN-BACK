@@ -27,9 +27,9 @@ public class IdLoginService {
     private final HairStudioDetailRepository studioRepo;
     private final DesignerDetailRepository designerRepo;
     private final UserRepository userRepo;
-    private final AuthLocalRepository authLocalRepo;
-    private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
+    private final AuthLocalService authLocalService;
+
 
     /**
      * Studio yoki Designer idForLogin orqali kirish.
@@ -52,7 +52,10 @@ public class IdLoginService {
             elevateRoleIfNeeded(user, Role.HAIR_STUDIO);
 
             // Parol tekshirish
-            verifyPassword(user.getId(), req.password());
+            boolean ok = authLocalService.verifyPassword(user.getId(), req.password());
+            if (!ok) {
+                throw unauthorized("Invalid credentials");
+            }
 
             // Tokenlar berish va javobni yig‘ish (DRY)
             return issueTokensAndBuildResponse(
@@ -78,7 +81,10 @@ public class IdLoginService {
 
             elevateRoleIfNeeded(user, Role.DESIGNER);
 
-            verifyPassword(user.getId(), req.password());
+            boolean ok = authLocalService.verifyPassword(user.getId(), req.password());
+            if (!ok) {
+                throw unauthorized("Invalid credentials");
+            }
 
             return issueTokensAndBuildResponse(
                     user,
@@ -104,17 +110,6 @@ public class IdLoginService {
         }
     }
 
-    /**
-     * Foydalanuvchi parolini tekshirish.
-     */
-    void verifyPassword(UUID userId, String raw) {
-        var auth = authLocalRepo.findByUserId(userId)
-                .orElseThrow(() -> unauthorized("Password not set"));
-
-        if (raw == null || raw.isBlank() || !passwordEncoder.matches(raw, auth.getPasswordHash())) {
-            throw unauthorized("Invalid credentials");
-        }
-    }
 
     /**
      * DRY: Umumiy token berish va javobni yig‘ish.
@@ -134,7 +129,6 @@ public class IdLoginService {
                 rt,
                 role.name(),
                 user.getId(),
-                targetId,
                 idForLogin
         );
         // Eslatma:

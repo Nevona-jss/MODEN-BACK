@@ -7,6 +7,5 @@ public record LoginResStudioAndDesigner(
         String refreshToken,
         String role,        // DESIGNER | HAIR_STUDIO
         UUID userId,
-        UUID entityId,      // designerId yoki studioId
         String idForLogin
 ) {}

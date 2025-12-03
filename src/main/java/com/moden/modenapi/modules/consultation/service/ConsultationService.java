@@ -3,28 +3,28 @@ package com.moden.modenapi.modules.consultation.service;
 import com.moden.modenapi.common.enums.ConsultationStatus;
 import com.moden.modenapi.common.enums.PaymentStatus;
 import com.moden.modenapi.common.service.BaseService;
-import com.moden.modenapi.modules.consultation.dto.ConsultationCreateReq;
-import com.moden.modenapi.modules.consultation.dto.ConsultationRes;
-import com.moden.modenapi.modules.consultation.dto.ConsultationUpdateReq;
-import com.moden.modenapi.modules.consultation.dto.CustomerMemoUpdateReq;
+import com.moden.modenapi.common.dto.FilterParams;
+import com.moden.modenapi.common.utils.CurrentUserUtil;
+import com.moden.modenapi.modules.consultation.dto.*;
 import com.moden.modenapi.modules.consultation.model.Consultation;
 import com.moden.modenapi.modules.consultation.repository.ConsultationRepository;
+import com.moden.modenapi.modules.designer.model.DesignerDetail;
+import com.moden.modenapi.modules.designer.repository.DesignerDetailRepository;
 import com.moden.modenapi.modules.reservation.model.Reservation;
 import com.moden.modenapi.modules.reservation.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -35,120 +35,286 @@ public class ConsultationService extends BaseService<Consultation> {
 
     private final ConsultationRepository consultationRepository;
     private final ReservationRepository reservationRepository;
-    // TODO: payment / user / designer / service / studio 모듈 연결 시 여기에 의존성 추가
+    private final DesignerDetailRepository designerDetailRepository;
 
     @Override
     protected JpaRepository<Consultation, UUID> getRepository() {
         return consultationRepository;
     }
 
-    // ---------------------------
-    //  상담 생성 (예약 기반)
-    // ---------------------------
-    public ConsultationRes create(ConsultationCreateReq req) {
-        Reservation reservation = reservationRepository.findById(req.reservationId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 예약을 찾을 수 없습니다: " + req.reservationId()
-                ));
-
+    // --------------------------------------------------------------------
+    // 🔹 Reservation 생성 시 자동 상담 생성
+    // --------------------------------------------------------------------
+    public Consultation createPendingForReservation(Reservation reservation) {
         Consultation entity = Consultation.builder()
-                .reservationId(req.reservationId())
-                .status(ConsultationStatus.COMPLETED)
-                .paymentStatus(resolvePaymentStatus(req.reservationId()))
-                .wantedImageUrl(req.wantedImageUrl())
-                .beforeImageUrl(req.beforeImageUrl())
-                .afterImageUrl(req.afterImageUrl())
-                .consultationMemo(req.consultationMemo())
-                .customerMemo(req.customerMemo())
-                .drawingImageUrl(req.drawingImageUrl())
+                .reservationId(reservation.getId())
+                .designerId(null)
+                .status(ConsultationStatus.PENDING)
                 .build();
-
-        Consultation saved = consultationRepository.save(entity);
-        return toRes(saved, reservation);
+        return consultationRepository.save(entity);
     }
 
-    // ---------------------------
-    //  상담 단건 조회 (ID 기준)
-    // ---------------------------
+    // --------------------------------------------------------------------
+    // 🔹 상담 단건 조회
+    // --------------------------------------------------------------------
     @Transactional(readOnly = true)
     public ConsultationRes getOne(UUID id) {
-        Consultation consultation = consultationRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 상담을 찾을 수 없습니다: " + id
-                ));
+        Consultation c = consultationRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "상담을 찾을 수 없습니다."));
 
-        Reservation reservation = reservationRepository.findById(consultation.getReservationId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 상담에 연결된 예약을 찾을 수 없습니다: " + consultation.getReservationId()
-                ));
+        Reservation r = reservationRepository.findById(c.getReservationId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "예약 정보를 찾을 수 없습니다."));
 
-        return toRes(consultation, reservation);
+        return toRes(c, r);
     }
 
-    // ---------------------------
-    //  예약 ID 기준 상담 조회
-    // ---------------------------
+    // --------------------------------------------------------------------
+    // 🔹 예약 기반 조회
+    // --------------------------------------------------------------------
     @Transactional(readOnly = true)
     public ConsultationRes getByReservationId(UUID reservationId) {
-        Consultation consultation = consultationRepository.findByReservationId(reservationId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 예약으로 생성된 상담이 없습니다: " + reservationId
-                ));
+        Consultation c = consultationRepository.findByReservationId(reservationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "해당 예약으로 상담 없음."));
 
-        Reservation reservation = reservationRepository.findById(reservationId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 예약을 찾을 수 없습니다: " + reservationId
-                ));
+        Reservation r = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "예약 정보 없음."));
 
-        return toRes(consultation, reservation);
+        return toRes(c, r);
     }
 
-    // ---------------------------
-    //  상담 수정 (디자이너/스튜디오용)
-    // ---------------------------
+    // --------------------------------------------------------------------
+    // 🔹 상담 수정
+    // --------------------------------------------------------------------
     public ConsultationRes update(UUID id, ConsultationUpdateReq req) {
-        Consultation consultation = consultationRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 상담을 찾을 수 없습니다: " + id
-                ));
+        Consultation c = consultationRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "상담 없음."));
 
-        if (req.status() != null) {
-            consultation.setStatus(req.status());
-        }
-        if (req.wantedImageUrl() != null) {
-            consultation.setWantedImageUrl(req.wantedImageUrl());
-        }
-        if (req.beforeImageUrl() != null) {
-            consultation.setBeforeImageUrl(req.beforeImageUrl());
-        }
-        if (req.afterImageUrl() != null) {
-            consultation.setAfterImageUrl(req.afterImageUrl());
-        }
-        if (req.consultationMemo() != null) {
-            consultation.setConsultationMemo(req.consultationMemo());
-        }
-        if (req.customerMemo() != null) {
-            consultation.setCustomerMemo(req.customerMemo());
-        }
-        if (req.drawingImageUrl() != null) {
-            consultation.setDrawingImageUrl(req.drawingImageUrl());
-        }
+        if (req.designerId() != null) c.setDesignerId(req.designerId());
+        if (req.wantedImageUrl() != null) c.setWantedImageUrl(req.wantedImageUrl());
+        if (req.beforeImageUrl() != null) c.setBeforeImageUrl(req.beforeImageUrl());
+        if (req.afterImageUrl() != null) c.setAfterImageUrl(req.afterImageUrl());
+        if (req.consultationMemo() != null) c.setConsultationMemo(req.consultationMemo());
+        if (req.customerMemo() != null) c.setCustomerMemo(req.customerMemo());
+        if (req.drawingImageUrl() != null) c.setDrawingImageUrl(req.drawingImageUrl());
 
-        Reservation reservation = reservationRepository.findById(consultation.getReservationId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 상담에 연결된 예약을 찾을 수 없습니다: " + consultation.getReservationId()
-                ));
+        c.setStatus(ConsultationStatus.COMPLETED);
 
-        return toRes(consultation, reservation);
+        Reservation r = reservationRepository.findById(c.getReservationId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "예약 없음."));
+
+        return toRes(c, r);
     }
 
+    // --------------------------------------------------------------------
+    // 🔹 FilterParams (period, serviceNames ...) 기반 목록
+    // --------------------------------------------------------------------
+    // ConsultationService ichida
+    @Transactional(readOnly = true)
+    public List<ConsultationRes> listForCustomerFiltered(FilterParams filterParams) {
+
+        // userId currentUser’dan olinadi
+        UUID customerId = CurrentUserUtil.currentUserId();
+
+        Specification<Consultation> spec =
+                ConsultationSpecifications.fromFilterParams(customerId, filterParams);
+
+        // sort: 가장 최근 상담부터
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
+
+        List<Consultation> list = consultationRepository.findAll();
+        return toResListWithReservations(list);  // 이미 있는 mapper
+    }
+
+
+    // --------------------------------------------------------------------
+    // 🔹 고객 메모 업데이트
+    // --------------------------------------------------------------------
+    public ConsultationRes updateCustomerMemo(UUID customerId,
+                                              UUID consultationId,
+                                              CustomerMemoUpdateReq req) {
+
+        Consultation c = consultationRepository.findById(consultationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "상담 없음."));
+
+        Reservation r = reservationRepository.findById(c.getReservationId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "예약 없음."));
+
+        if (!r.getCustomerId().equals(customerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인 상담만 수정 가능.");
+        }
+
+        c.setCustomerMemo(req.customerMemo());
+        return toRes(c, r);
+    }
+
+    public List<Consultation> search(ConsultationSearchReq req) {
+
+        UUID serviceId = req.serviceId();
+        String serviceNameKeyword = req.serviceNameKeyword();
+
+        // Agar serviceNameKeyword bo‘lsa – shuni ishlatamiz
+        if (serviceNameKeyword != null && !serviceNameKeyword.isBlank()) {
+            return consultationRepository.searchDynamicForCustomer(
+                    req.customerId(),
+                    null,                 // serviceId ni e’tiborsiz qoldiryapmiz yoki istasang ikkalasini ham yuborish mumkin
+                    serviceNameKeyword,
+                    req.fromDate(),
+                    req.toDate()
+            );
+        }
+
+        // Aks holda oldingi serviceId bo‘yicha qidiruv
+        return consultationRepository.searchDynamicForCustomer(
+                req.customerId(),
+                serviceId,
+                null,
+                req.fromDate(),
+                req.toDate()
+        );
+    }
+
+
+
+    @Transactional(readOnly = true)
+    public List<ConsultationRes> listForStudioByCustomer(
+            UUID customerId,
+            ConsultationStatus status,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        Instant from = (fromDate != null)
+                ? fromDate.atStartOfDay(ZoneId.of("Asia/Tashkent")).toInstant()
+                : Instant.EPOCH;
+
+        Instant to = (toDate != null)
+                ? toDate.plusDays(1).atStartOfDay(ZoneId.of("Asia/Tashkent")).toInstant()
+                : Instant.now();
+
+        // ✔ Custom JPQL query
+        List<Consultation> list = consultationRepository.findForCustomerWithFilters(
+                customerId,
+                status,
+                from,
+                to
+        );
+
+        return list.stream()
+                .map(this::mapToDto)
+                .toList();
+    }
+
+
+    // importlar, class definitsiyasi…
+
+    private ConsultationRes mapToDto(Consultation c) {
+        Reservation r = reservationRepository.findById(c.getReservationId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Reservation not found for consultation " + c.getId()
+                ));
+
+        String studioName       = resolveStudioName(r);
+        String customerName     = resolveCustomerFullName(r.getCustomerId());
+        UUID designerIdForName  = (c.getDesignerId() != null) ? c.getDesignerId() : r.getDesignerId();
+        String designerName     = resolveDesignerFullName(designerIdForName);
+        String designerPosition = resolveDesignerPosition(designerIdForName);
+        String serviceName      = resolveServiceName(r.getServiceId());
+        BigDecimal totalAmount  = resolveTotalPaymentAmount(r.getId());
+        PaymentStatus paymentStatus = resolvePaymentStatus(r.getId());
+
+        return new ConsultationRes(
+                c.getId(),
+                c.getReservationId(),
+
+                customerName,
+                designerName,
+                designerPosition,
+                serviceName,
+                studioName,
+                totalAmount,
+                r.getReservationDate(),
+                r.getStartTime(),
+                r.getEndTime(),
+                c.getStatus(),
+                paymentStatus,
+                c.getWantedImageUrl(),
+                c.getBeforeImageUrl(),
+                c.getAfterImageUrl(),
+                c.getConsultationMemo(),
+                c.getCustomerMemo(),
+                c.getDrawingImageUrl(),
+                c.getCreatedAt(),
+                c.getUpdatedAt(),
+                c.getDeletedAt()
+        );
+    }
+    private String resolveDesignerPosition(UUID designerId) {
+        if (designerId == null) {
+            return null;
+        }
+        DesignerDetail dd = designerDetailRepository
+                .findById(designerId)
+                .orElse(null);
+        return (dd != null) ? String.valueOf(dd.getPosition()) : null;
+    }
+
+
+
+    // --------------------------------------------------------------------
+    // 🔹 Mapper
+    // --------------------------------------------------------------------
+    private ConsultationRes toRes(Consultation c, Reservation r) {
+
+        String studioName       = resolveStudioName(r);
+        String customerName     = resolveCustomerFullName(r.getCustomerId());
+        UUID designerIdForName  = (c.getDesignerId() != null) ? c.getDesignerId() : r.getDesignerId();
+        String designerName     = resolveDesignerFullName(designerIdForName);
+        String serviceName      = resolveServiceName(r.getServiceId());
+        BigDecimal totalAmount  = resolveTotalPaymentAmount(r.getId());
+        PaymentStatus paymentStatus = resolvePaymentStatus(r.getId());
+
+        return new ConsultationRes(
+                c.getId(),
+                c.getReservationId(),
+                customerName,
+                designerName,
+                null,
+                serviceName,
+                studioName,
+                totalAmount,
+                r.getReservationDate(),
+                r.getStartTime(),
+                r.getEndTime(),
+                c.getStatus(),
+                paymentStatus,
+                c.getWantedImageUrl(),
+                c.getBeforeImageUrl(),
+                c.getAfterImageUrl(),
+                c.getConsultationMemo(),
+                c.getCustomerMemo(),
+                c.getDrawingImageUrl(),
+                c.getCreatedAt(),
+                c.getUpdatedAt(),
+                c.getDeletedAt()
+        );
+    }
+
+    // --------------------------------------------------------------------
+    private List<ConsultationRes> toResListWithReservations(List<Consultation> list) {
+        if (list.isEmpty()) return List.of();
+
+        List<UUID> reservationIds =
+                list.stream().map(Consultation::getReservationId).toList();
+
+        Map<UUID, Reservation> map =
+                reservationRepository.findAllById(reservationIds)
+                        .stream()
+                        .collect(Collectors.toMap(Reservation::getId, r -> r));
+
+        return list.stream()
+                .map(c -> toRes(c, map.get(c.getReservationId())))
+                .toList();
+    }
     @Transactional(readOnly = true)
     public List<ConsultationRes> searchForStaff(
             UUID designerId,
@@ -158,24 +324,12 @@ public class ConsultationService extends BaseService<Consultation> {
             LocalDate fromDate,
             LocalDate toDate
     ) {
-        LocalDateTime from = (fromDate != null) ? fromDate.atStartOfDay() : null;
-        LocalDateTime to   = (toDate != null) ? toDate.plusDays(1).atStartOfDay() : null;
-
-        List<Consultation> consultations = consultationRepository.searchDynamicForStaff(
-                designerId,
-                customerId,
-                serviceId,
-                status,
-                from,
-                to
+        Specification<Consultation> spec = ConsultationSpecifications.forStaff(
+                designerId, customerId, serviceId, status, fromDate, toDate
         );
-
-        // 이미 있는 공통 mapper 활용
-        return toResListWithReservations(consultations);
+        List<Consultation> list = consultationRepository.findAll((Sort) spec);
+        return toResListWithReservations(list);
     }
-// ---------------------------
-    //  디자이너별 상담 목록 (Reservation.designerId 기준)
-    // ---------------------------
     @Transactional(readOnly = true)
     public List<ConsultationRes> listForDesigner(UUID designerId) {
         // 1) 디자이너의 예약들
@@ -200,254 +354,13 @@ public class ConsultationService extends BaseService<Consultation> {
                 })
                 .toList();
     }
-
-    @Transactional(readOnly = true)
-    public List<ConsultationRes> listForCustomerFiltered(
-            UUID customerId,
-            UUID serviceId,
-            LocalDate fromDate,
-            LocalDate toDate
-    ) {
-        LocalDateTime from = (fromDate != null) ? fromDate.atStartOfDay() : null;
-        LocalDateTime to   = (toDate != null) ? toDate.plusDays(1).atStartOfDay() : null;
-
-        // 1) Customer + serviceId + from/to bo‘yicha Consultation larni olib kelamiz
-        List<Consultation> consultations = consultationRepository.searchDynamicForCustomer(
-                customerId,
-                serviceId,
-                from,
-                to
-        );
-
-        // 2) Mavjud umumiy mapper: Consultation + Reservation → ConsultationRes
-        //    (ichida reservationlarni findAllById qilib map tuzadi)
-        return toResListWithReservations(consultations);
-    }
-
-
-    // ========================================================
-    //  👤 고객 전용: 내 상담 목록 / 필터
-    // ========================================================
-
-    /** 서비스별 필터 (현재 고객 + 특정 서비스 ID) */
-    @Transactional(readOnly = true)
-    public List<ConsultationRes> listForCustomerByService(UUID customerId, UUID serviceId) {
-        List<Reservation> reservations = reservationRepository.findByCustomerId(customerId).stream()
-                .filter(r -> serviceId.equals(r.getServiceId()))
-                .toList();
-
-        return mapConsultationsByReservations(reservations);
-    }
-
-    // ========================================================
-    //  👤 고객 전용: 내 메모 업데이트
-    // ========================================================
-
-    public ConsultationRes updateCustomerMemo(UUID customerId,
-                                              UUID consultationId,
-                                              CustomerMemoUpdateReq req) {
-
-        Consultation consultation = consultationRepository.findById(consultationId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 상담을 찾을 수 없습니다: " + consultationId
-                ));
-
-        // 상담이 연결된 예약 확인
-        Reservation reservation = reservationRepository.findById(consultation.getReservationId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 상담에 연결된 예약을 찾을 수 없습니다: " + consultation.getReservationId()
-                ));
-
-        // 현재 로그인한 고객이 이 예약의 주인인지 검증
-        if (!reservation.getCustomerId().equals(customerId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN,
-                    "본인에게 속한 상담에만 메모를 작성/수정할 수 있습니다."
-            );
-        }
-
-        // 실제로는 고객 메모만 수정
-        consultation.setCustomerMemo(req.customerMemo());
-
-        return toRes(consultation, reservation);
-    }
-
-    // ========================================================
-    //  내부 공통 매핑 유틸
-    // ========================================================
-
-    private List<ConsultationRes> mapConsultationsByReservations(List<Reservation> reservations) {
-        if (reservations.isEmpty()) return List.of();
-
-        Map<UUID, Reservation> reservationMap = reservations.stream()
-                .collect(Collectors.toMap(Reservation::getId, r -> r));
-        List<UUID> reservationIds = reservations.stream()
-                .map(Reservation::getId)
-                .toList();
-
-        List<Consultation> consultations =
-                consultationRepository.findByReservationIdIn(reservationIds);
-
-        return consultations.stream()
-                .map(c -> {
-                    Reservation r = reservationMap.get(c.getReservationId());
-                    return toRes(c, r);
-                })
-                .toList();
-    }
-
-    /** 결제 상태 조회 placeholder – Payment 모듈 붙일 때 구현 */
-    private PaymentStatus resolvePaymentStatus(UUID reservationId) {
-        // TODO: Payment 모듈에서 reservationId 기준 결제 상태 조회
-        return PaymentStatus.PENDING;
-    }
-
-    /** 🔹 총 결제 금액 조회 placeholder */
-    private BigDecimal resolveTotalPaymentAmount(UUID reservationId) {
-        // TODO: Payment 모듈에서 reservationId 기준 결제 합계 조회
-        return BigDecimal.ZERO; // 임시
-    }
-
-    private String resolveCustomerFullName(UUID customerId) {
-        // TODO: 고객/유저 모듈에서 fullName 조회
-        return "고객이름";
-    }
-
-    private String resolveDesignerFullName(UUID designerId) {
-        // TODO: 디자이너 모듈에서 fullName 조회
-        return "디자이너이름";
-    }
-
-    private String resolveServiceName(UUID serviceId) {
-        // TODO: 서비스(시술) 모듈에서 서비스명 조회
-        return "서비스이름";
-    }
-
-    private String resolveStudioName(Reservation r) {
-        // TODO: 스튜디오 이름을 Reservation 또는 Studio 모듈에서 조회
-        return "스튜디오이름";
-    }
-
-    // 🔹 Consultation + Reservation -> ConsultationRes 매핑
-    private ConsultationRes toRes(Consultation c, Reservation r) {
-        if (r == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "상담에 연결된 예약 정보가 없습니다. reservationId=" + c.getReservationId()
-            );
-        }
-
-        String studioName   = resolveStudioName(r);                 // 스튜디오 이름
-        String customerName = resolveCustomerFullName(r.getCustomerId());  // 고객 이름
-        String designerName = resolveDesignerFullName(r.getDesignerId());  // 디자이너 이름
-        String serviceName  = resolveServiceName(r.getServiceId());        // 서비스 이름
-        LocalDateTime reservationAt = r.getReservationAt();               // 예약 시간
-        BigDecimal totalPayment = resolveTotalPaymentAmount(r.getId());   // 총 금액
-
-        return new ConsultationRes(
-                c.getId(),
-                c.getReservationId(),
-
-                // 🔹 DTO 필드 순서에 맞춰서 넣기
-                customerName,   // customerFullName
-                designerName,   // designerFullName
-                serviceName,    // serviceName
-                studioName,     // name (스튜디오 이름)
-
-                totalPayment,
-                reservationAt,
-                c.getStatus(),
-                c.getPaymentStatus(),
-                c.getWantedImageUrl(),
-                c.getBeforeImageUrl(),
-                c.getAfterImageUrl(),
-                c.getConsultationMemo(),
-                c.getCustomerMemo(),
-                c.getDrawingImageUrl(),
-                c.getCreatedAt(),
-                c.getUpdatedAt(),
-                c.getDeletedAt()
-        );
-    }
-
-    // 상태별 목록에서 사용하는 공통 헬퍼
-    private List<ConsultationRes> toResListWithReservations(List<Consultation> consultations) {
-        if (consultations.isEmpty()) return List.of();
-
-        List<UUID> reservationIds = consultations.stream()
-                .map(Consultation::getReservationId)
-                .toList();
-
-        List<Reservation> reservations = reservationRepository.findAllById(reservationIds);
-        Map<UUID, Reservation> reservationMap = reservations.stream()
-                .collect(Collectors.toMap(Reservation::getId, r -> r));
-
-        return consultations.stream()
-                .map(c -> {
-                    Reservation r = reservationMap.get(c.getReservationId());
-                    return toRes(c, r);
-                })
-                .toList();
-    }
-
-    // ---------------------------
-//  상담 생성 (예약 기반 + 권한 체크)
-//  - HAIR_STUDIO: 모든 예약에 대해 생성 가능
-//  - DESIGNER   : 자기에게 배정된 예약만 생성 가능
-// ---------------------------
-    public ConsultationRes createByStaff(UUID currentUserId, ConsultationCreateReq req) {
-        Reservation reservation = reservationRepository.findById(req.reservationId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 예약을 찾을 수 없습니다: " + req.reservationId()
-                ));
-
-        // 현재 로그인 사용자가 HAIR_STUDIO 인지 여부
-        boolean isHairStudio = hasRole("ROLE_HAIR_STUDIO");
-        boolean isDesigner   = hasRole("ROLE_DESIGNER");
-
-        // 디자이너인 경우에만 본인 예약인지 검사
-        if (isDesigner && !isHairStudio) {
-            UUID designerId = reservation.getDesignerId();
-            if (designerId == null || !designerId.equals(currentUserId)) {
-                throw new ResponseStatusException(
-                        HttpStatus.FORBIDDEN,
-                        "디자이너는 본인에게 배정된 예약에 대해서만 상담을 생성할 수 있습니다."
-                );
-            }
-        }
-        // HAIR_STUDIO 는 별도 체크 없이 통과
-
-        Consultation entity = Consultation.builder()
-                .reservationId(req.reservationId())
-                .status(ConsultationStatus.PENDING)          // 상담대기
-                .paymentStatus(resolvePaymentStatus(req.reservationId()))
-                .wantedImageUrl(req.wantedImageUrl())
-                .beforeImageUrl(req.beforeImageUrl())
-                .afterImageUrl(req.afterImageUrl())
-                .consultationMemo(req.consultationMemo())
-                .customerMemo(req.customerMemo())
-                .drawingImageUrl(req.drawingImageUrl())
-                .build();
-
-        Consultation saved = consultationRepository.save(entity);
-        return toRes(saved, reservation);
-    }
-
-    /** 현재 Authentication 에 특정 ROLE 이 있는지 확인하는 유틸 */
-    private boolean hasRole(String role) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getAuthorities() == null) return false;
-
-        for (GrantedAuthority authority : auth.getAuthorities()) {
-            if (role.equals(authority.getAuthority())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-
+    // --------------------------------------------------------------------
+    // 🔹 Placeholder resolver
+    // --------------------------------------------------------------------
+    private PaymentStatus resolvePaymentStatus(UUID reservationId) { return PaymentStatus.PENDING; }
+    private BigDecimal resolveTotalPaymentAmount(UUID reservationId) { return BigDecimal.ZERO; }
+    private String resolveCustomerFullName(UUID customerId) { return "고객이름"; }
+    private String resolveDesignerFullName(UUID designerId) { return "디자이너"; }
+    private String resolveServiceName(UUID serviceId) { return "서비스"; }
+    private String resolveStudioName(Reservation r) { return "스튜디오"; }
 }

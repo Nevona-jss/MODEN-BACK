@@ -2,22 +2,24 @@ package com.moden.modenapi.modules.reservation.controller;
 
 import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.response.ResponseMessage;
+import com.moden.modenapi.common.utils.CurrentUserUtil;
 import com.moden.modenapi.modules.reservation.dto.ReservationCreateRequest;
 import com.moden.modenapi.modules.reservation.dto.ReservationResponse;
+import com.moden.modenapi.modules.reservation.dto.ReservationUpdateRequest;
 import com.moden.modenapi.modules.reservation.service.ReservationService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+
 
 @Tag(name = "RESERVATION")
 @RestController
@@ -27,6 +29,9 @@ public class ReservationController {
 
     private final ReservationService reservationService;
 
+    // ============================================================
+    // 1) LIST (filter + pagination)
+    // ============================================================
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Reservation list (filter + pagination)")
     @GetMapping("/list")
@@ -59,42 +64,25 @@ public class ReservationController {
         );
     }
 
-
-
     // ============================================================
     // 2) CREATE
-    //    - mijoz ID tashqaridan beriladi (customerId)
-    //    - qolganlari DTO ga yig'iladi
     // ============================================================
-    @PostMapping("/create")
-    @Operation(summary = "예약 생성 (har bir parametr alohida input sifatida)")
+
+    @PostMapping(
+            value = "/create",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @Operation(summary = "예약 생성 (JSON body 기반)")
     public ResponseEntity<ResponseMessage<ReservationResponse>> create(
-            @Parameter(description = "Mijoz ID")
-            @RequestParam UUID customerId,
-
-            @Parameter(description = "Dizayner ID")
-            @RequestParam UUID designerId,
-
-            @Parameter(description = "서비스 ID")
-            @RequestParam UUID serviceId,
-
-            @Parameter(description = "Boshlanish vaqti (yyyy-MM-dd'T'HH:mm:ss)")
-            @RequestParam("reservationAt")
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime reservationAt,
-
-            @Parameter(description = "예약 메모 / 설명")
-            @RequestParam(required = false) String description
+            @Valid @RequestBody ReservationCreateRequest request
     ) {
-        var request = new ReservationCreateRequest(
-                customerId,      // DTO 첫 번째 파라미터
-                designerId,
-                serviceId,
-                reservationAt,
-                description
-        );
-        var response = reservationService.createForCustomer(customerId, request);
+        UUID currentStudioId = CurrentUserUtil.currentUserId();
 
+        var response = reservationService.create(
+                currentStudioId,
+                request
+        );
 
         return ResponseEntity.ok(
                 ResponseMessage.success("예약이 생성되었습니다.", response)
@@ -119,40 +107,18 @@ public class ReservationController {
     // ============================================================
     // 4) UPDATE (부분 수정 가능)
     // ============================================================
-    @PatchMapping("/update/{id}")
-    @Operation(summary = "예약 수정 (har bir parametr alohida, hammasi optional)")
+
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @PatchMapping(
+            value = "/update/{id}",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    @Operation(summary = "예약 수정 (JSON body 기반, 모든 필드 optional)")
     public ResponseEntity<ResponseMessage<ReservationResponse>> update(
             @PathVariable UUID id,
-
-            @Parameter(description = "Mijoz ID (zarur bo'lsa)")
-            @RequestParam(required = false) UUID customerId,
-
-            @Parameter(description = "Dizayner ID")
-            @RequestParam(required = false) UUID designerId,
-
-            @Parameter(description = "서비스 ID")
-            @RequestParam(required = false) UUID serviceId,
-
-            @Parameter(description = "Boshlanish vaqti (yyyy-MM-dd'T'HH:mm:ss)")
-            @RequestParam(value = "reservationAt", required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime reservationAt,
-
-            @Parameter(description = "예약 메모 / 설명")
-            @RequestParam(required = false) String description,
-
-            @Parameter(description = "예약 상태")
-            @RequestParam(required = false) ReservationStatus status
+            @Valid @RequestBody ReservationUpdateRequest request
     ) {
-        var request = new ReservationCreateRequest(
-                customerId,      // DTO 첫 번째 파라미터
-                designerId,
-                serviceId,
-                reservationAt,
-                description
-        );
-        var response = reservationService.createForCustomer(customerId, request);
-
+        var response = reservationService.update(id, request);
 
         return ResponseEntity.ok(
                 ResponseMessage.success("예약 수정이 완료되었습니다.", response)
@@ -175,11 +141,11 @@ public class ReservationController {
     }
 
     // ============================================================
-    // 6) DESIGNER BO‘YICHA LIST
-    //    (kerak bo'lsa FE uchun alohida endpoint — /list ni ishlatmasa ham bo'ladi)
+    // 6) DESIGNER BO‘YICHA LIST (simple)
     // ============================================================
     @Operation(summary = "특정 디자이너의 모든 예약 조회")
     @GetMapping("/designer/{designerId}")
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listByDesigner(
             @PathVariable UUID designerId
     ) {
@@ -188,4 +154,5 @@ public class ReservationController {
                 ResponseMessage.success("디자이너 예약 목록 조회가 완료되었습니다.", list)
         );
     }
+
 }

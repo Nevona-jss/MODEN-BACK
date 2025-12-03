@@ -10,7 +10,6 @@ import com.moden.modenapi.modules.customer.service.CustomerService;
 import com.moden.modenapi.modules.designer.dto.*;
 import com.moden.modenapi.modules.designer.service.DesignerService;
 import com.moden.modenapi.modules.reservation.dto.ReservationResponse;
-import com.moden.modenapi.modules.reservation.dto.ReservationUpdateRequest;
 import com.moden.modenapi.modules.reservation.service.ReservationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,7 +22,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,9 +37,9 @@ public class DesignerController {
     private final ConsultationService consultationService;
 
     // ----------------------------------------------------------------------
-    // CUSTOMER register (already existed)
+    // CUSTOMER register
     // ----------------------------------------------------------------------
-    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @PreAuthorize("hasRole('DESIGNER')")
     @PostMapping("/customers/register")
     public ResponseEntity<ResponseMessage<Void>> registerCustomer(@RequestBody CustomerSignUpRequest req) {
         customerService.customerRegister(req, "default123!");
@@ -51,11 +49,13 @@ public class DesignerController {
                 .build());
     }
 
+
+
     // ----------------------------------------------------------------------
-    // GET portfolio (already existed)
+    // GET portfolio
     // ----------------------------------------------------------------------
     @GetMapping("/{id}/portfolio")
-    public ResponseEntity<ResponseMessage<List<PortfolioItemRes>>> getPortfolio(
+    public ResponseEntity<ResponseMessage<List<String>>> getPortfolio(
             @PathVariable("id") UUID designerId
     ) {
         var list = designerService.getPortfolio(designerId);
@@ -79,28 +79,28 @@ public class DesignerController {
         );
     }
 
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Designer o'zi ishlaydigan reservationni o'zgartirishi")
-    @PutMapping("/reservations/update/{id}")
-    public ResponseEntity<ResponseMessage<ReservationResponse>> updateByDesigner(
-            @PathVariable UUID id,
-            @RequestBody ReservationUpdateRequest request
-    ) {
-        UUID designerId = CurrentUserUtil.currentUserId();
-        ReservationResponse response = reservationService.updateByDesigner(designerId, id, request);
-        return ResponseEntity.ok(ResponseMessage.success("Designer reservation updated.", response));
-    }
-
-    @PreAuthorize("hasRole('DESIGNER')")
-    @Operation(summary = "Designer o'zi ishlaydigan reservationni bekor qilishi")
-    @PostMapping("/reservations/{id}/cancel")
-    public ResponseEntity<ResponseMessage<ReservationResponse>> cancelByDesigner(
-            @PathVariable UUID id
-    ) {
-        UUID designerId = CurrentUserUtil.currentUserId();
-        ReservationResponse response = reservationService.cancelByDesigner(designerId, id);
-        return ResponseEntity.ok(ResponseMessage.success("Designer reservation canceled.", response));
-    }
+//    @PreAuthorize("hasRole('DESIGNER')")
+//    @Operation(summary = "Designer o'zi ishlaydigan reservationni o'zgartirishi")
+//    @PutMapping("/reservations/update/{id}")
+//    public ResponseEntity<ResponseMessage<ReservationResponse>> updateByDesigner(
+//            @PathVariable UUID id,
+//            @RequestBody ReservationUpdateRequest request
+//    ) {
+//        UUID designerId = CurrentUserUtil.currentUserId();
+//        ReservationResponse response = reservationService.updateByDesigner(designerId, id, request);
+//        return ResponseEntity.ok(ResponseMessage.success("Designer reservation updated.", response));
+//    }
+//
+//    @PreAuthorize("hasRole('DESIGNER')")
+//    @Operation(summary = "Designer o'zi ishlaydigan reservationni bekor qilishi")
+//    @PostMapping("/reservations/{id}/cancel")
+//    public ResponseEntity<ResponseMessage<ReservationResponse>> cancelByDesigner(
+//            @PathVariable UUID id
+//    ) {
+//        UUID designerId = CurrentUserUtil.currentUserId();
+//        ReservationResponse response = reservationService.cancelByDesigner(designerId, id);
+//        return ResponseEntity.ok(ResponseMessage.success("Designer reservation canceled.", response));
+//    }
 
     @PreAuthorize("hasRole('DESIGNER')")
     @Operation(summary = "현재 로그인한 디자이너 자신의 예약 목록 (필터 포함)")

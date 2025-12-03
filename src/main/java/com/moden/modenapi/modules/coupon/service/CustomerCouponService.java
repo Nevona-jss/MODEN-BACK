@@ -14,9 +14,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import java.time.Instant;
-import java.util.List;
-import java.util.UUID;
+
+import java.time.*;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,42 +28,130 @@ public class CustomerCouponService {
     private final CouponRepository couponRepository;
     private final CustomerDetailRepository customerDetailRepository;
 
+    private static final ZoneId ZONE_ID = ZoneId.of("Asia/Tashkent");
 
-    /**
-     * Hozir login bo'lgan USER (userId) uchun,
-     * unga bog'langan CUSTOMER profilini topib,
-     * shu customerni kuponlarini qaytaradi.
-     */
+    // ----------------------------------------------------------------------
+    // 1) 현재 로그인한 USER 기준으로 customer coupon + filter
+    // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
-    public List<CustomerCouponRes> getCouponsForCurrentCustomerUser(UUID userId, CouponStatus status) {
-        // CustomerDetailRepository da 이미 이런 메서드 있음:
-        // findActiveByUserIdOrderByUpdatedDesc(userId, pageRequest)
-        var page1 = PageRequest.of(0, 1);
-
-        var customerOpt = customerDetailRepository
-                .findActiveByUserIdOrderByUpdatedDesc(userId, page1)
-                .stream()
-                .findFirst();
-
-        if (customerOpt.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer profili topilmadi");
-        }
-
-        UUID customerId = customerOpt.get().getId();  // 🔹 bu asl customer_coupon.customer_id ga mos keladigan ID
-
-        return getCouponsForCustomer(customerId, status);
+    public List<CustomerCouponRes> getCouponsForCurrentCustomerUser(
+            UUID userId,
+            CouponStatus status,
+            String period,
+            List<String> serviceNames
+    ) {
+        UUID customerId = resolveCustomerIdForUser(userId);
+        return getCouponsForCustomer(customerId, status, period, serviceNames);
     }
 
-    /**
-     * 한 명의 customer 에게 쿠폰 1개 발급
-     * - studio/coupon/customer 유효성 체크
-     * - 이미 가지고 있는 쿠폰인지 중복 체크
-     * - 이상 없으면 CustomerCoupon 저장
-     */
+    // ----------------------------------------------------------------------
+    // 2) 특정 customerId 기준 filter (status + period + serviceNames)
+    // ----------------------------------------------------------------------
+    @Transactional(readOnly = true)
+    public List<CustomerCouponRes> getCouponsForCustomer(
+            UUID customerId,
+            CouponStatus status,
+            String period,
+            List<String> serviceNames
+    ) {
+        // 1) customerId bo‘yicha barcha CustomerCoupon
+        List<CustomerCoupon> base = customerCouponRepository
+                .findAllByCustomerIdAndDeletedAtIsNullOrderByCreatedAtDesc(customerId);
+
+        // 2) period → from Instant
+        Instant from = resolveFromForPeriod(period);
+
+        // 3) serviceNames filter set
+        Set<String> serviceNameFilter = null;
+        if (serviceNames != null && !serviceNames.isEmpty()) {
+            serviceNameFilter = serviceNames.stream()
+                    .filter(Objects::nonNull)
+                    .map(s -> s.trim().toLowerCase())
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toSet());
+            if (serviceNameFilter.isEmpty()) {
+                serviceNameFilter = null;
+            }
+        }
+
+        Set<String> finalServiceNameFilter = serviceNameFilter;
+        CouponStatus finalStatus = status;
+
+        return base.stream()
+                .filter(cc -> {
+                    // ⏰ period filter: createdAt bo‘yicha
+                    if (from != null) {
+                        Instant created = cc.getCreatedAt();
+                        if (created == null || created.isBefore(from)) {
+                            return false;
+                        }
+                    }
+
+                    // 🔹 Coupon 로드 (status & name filter uchun)
+                    Coupon coupon = couponRepository
+                            .findByIdAndDeletedAtIsNull(cc.getCouponId())
+                            .orElse(null);
+                    if (coupon == null) return false;
+
+                    // status filter
+                    if (finalStatus != null && coupon.getStatus() != finalStatus) {
+                        return false;
+                    }
+
+                    // serviceName filter: Coupon.name
+                    if (finalServiceNameFilter != null) {
+                        String couponName = coupon.getName();
+                        if (couponName == null) return false;
+
+                        if (!finalServiceNameFilter.contains(couponName.trim().toLowerCase())) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                })
+                .map(this::toCustomerCouponRes)
+                .toList();
+    }
+
+    // ----------------------------------------------------------------------
+    // 3) 특정 customerId 기준, status 만으로 필터 (단순 목록)
+    // ----------------------------------------------------------------------
+    @Transactional(readOnly = true)
+    public List<CustomerCouponRes> getCouponsForCustomer(UUID customerId, CouponStatus status) {
+
+        List<CustomerCoupon> list = customerCouponRepository
+                .findAllByCustomerIdAndDeletedAtIsNullOrderByCreatedAtDesc(customerId);
+
+        return list.stream()
+                .filter(cc -> {
+                    if (status == null) return true;
+                    Coupon coupon = couponRepository
+                            .findByIdAndDeletedAtIsNull(cc.getCouponId())
+                            .orElse(null);
+                    return coupon != null && coupon.getStatus() == status;
+                })
+                .map(this::toCustomerCouponRes)
+                .toList();
+    }
+
+    // ----------------------------------------------------------------------
+    // 4) Studio → 특정 customer (userId) kupon list (controller에서 사용)
+    // ----------------------------------------------------------------------
+    @Transactional(readOnly = true)
+    public List<CustomerCouponRes> listCouponsForCustomerUser(UUID customerUserId) {
+        UUID customerId = resolveCustomerIdForUser(customerUserId);
+        // status = null → hammasi
+        return getCouponsForCustomer(customerId, null);
+    }
+
+    // ----------------------------------------------------------------------
+    // 5) CUSTOMER coupon assign (studio가 고객에게 쿠폰 발급)
+    // ----------------------------------------------------------------------
     @Transactional
     public void assignToCustomer(UUID studioId, UUID couponId, UUID customerId) {
 
-        // 1) 쿠폰 존재 + 삭제 안된 것
+        // 1) 쿠폰 존재 + soft delete 아님
         Coupon coupon = couponRepository.findByIdAndDeletedAtIsNull(couponId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -91,121 +180,128 @@ public class CustomerCouponService {
             );
         }
 
-        // 4) 이미 이 쿠폰을 가진 상태인지? (AVAILABLE / EXPIRED / USED 모두 포함)
-        boolean alreadyHas = customerCouponRepository.existsByCouponIdAndCustomerIdAndStatusIn(
-                couponId,
-                customerId,
-                List.of(CouponStatus.AVAILABLE, CouponStatus.EXPIRED, CouponStatus.USED)
-        );
+        // 4) 이미 동일 couponId를 가진 CustomerCoupon 이 있는지 (soft delete 아닌 것 기준)
+        boolean alreadyHas = customerCouponRepository
+                .existsByCouponIdAndCustomerIdAndDeletedAtIsNull(couponId, customerId);
 
         if (alreadyHas) {
-            // 이미 발급된 경우는 에러로 던져서 scheduler 에서 catch 해서 skip 하도록
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Customer already has this coupon"
             );
         }
 
-        // 5) CustomerCoupon 저장 (여기서 studioId 는 customer 에서 가져온 값과 동일)
+        // 5) CustomerCoupon 저장
         CustomerCoupon cc = CustomerCoupon.builder()
                 .studioId(studioId)
                 .couponId(couponId)
                 .customerId(customerId)
-                .status(CouponStatus.AVAILABLE)
-                .issuedAt(Instant.now())
                 .build();
 
         customerCouponRepository.save(cc);
     }
 
-    /**
-     * Customer kuponni ishlatadi (faqat status EXPIRED qilinadi)
-     */
-    public CustomerCoupon useCustomerCoupon(UUID customerCouponId, UUID customerId) {
-        CustomerCoupon cc = customerCouponRepository.lockByIdForUpdate(customerCouponId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer coupon topilmadi"));
+    // ----------------------------------------------------------------------
+    // 6) 현재 로그인 customer user 기준, 사용 가능한 쿠폰 개수 (summary용)
+    // ----------------------------------------------------------------------
+    @Transactional(readOnly = true)
+    public byte countAvailableCouponsForCurrentCustomerUser(UUID userId) {
+        // 1) user → customerId
+        UUID customerId = resolveCustomerIdForUser(userId);
 
-        // Kupon shu customerniki bo‘lishi kerak
-        if (!cc.getCustomerId().equals(customerId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bu kupon ushbu customerniki emas");
-        }
+        // 2) shu customer uchun barcha CustomerCoupon
+        var list = customerCouponRepository
+                .findAllByCustomerIdAndDeletedAtIsNull(customerId);
 
-        // status AVAILABLE bo‘lishi shart
-        if (cc.getStatus() != CouponStatus.AVAILABLE) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kupon available emas");
-        }
+        LocalDate today = LocalDate.now(ZONE_ID);
 
-        // ishlatilgan — endi EXPIRED
-        cc.setStatus(CouponStatus.EXPIRED);
-        cc.setUsedAt(Instant.now());
+        long count = list.stream()
+                .map(cc -> couponRepository.findByIdAndDeletedAtIsNull(cc.getCouponId()).orElse(null))
+                .filter(Objects::nonNull)
+                .filter(c -> c.getStatus() == CouponStatus.AVAILABLE)
+                .filter(c ->
+                        (c.getStartDate() == null || !c.getStartDate().isAfter(today)) &&
+                                (c.getExpiryDate() == null || !c.getExpiryDate().isBefore(today))
+                )
+                .count();
 
-        return customerCouponRepository.save(cc);
+        return (byte) count;
     }
 
     // ----------------------------------------------------------------------
-    // CUSTOMER: o'z kuponlarini ko‘rishi (DTO)
+    // HELPER: period → from Instant
     // ----------------------------------------------------------------------
-    @Transactional(readOnly = true)
-    public List<CustomerCouponRes> getCouponsForCustomer(UUID customerId, CouponStatus status) {
+    private Instant resolveFromForPeriod(String period) {
+        if (period == null) return null;
 
-        List<CustomerCoupon> list;
+        String p = period.trim().toUpperCase();
+        LocalDate today = LocalDate.now(ZONE_ID);
 
-        if (status != null) {
-            list = customerCouponRepository
-                    .findAllByCustomerIdAndStatusAndDeletedAtIsNull(customerId, status);
-        } else {
-            list = customerCouponRepository
-                    .findAllByCustomerIdAndDeletedAtIsNull(customerId);
-        }
-
-        return list.stream()
-                .map(this::toCustomerCouponRes)
-                .toList();
+        return switch (p) {
+            case "TODAY" -> today.atStartOfDay(ZONE_ID).toInstant();
+            case "WEEK" -> {
+                LocalDate monday = today.with(DayOfWeek.MONDAY);
+                yield monday.atStartOfDay(ZONE_ID).toInstant();
+            }
+            case "MONTH" -> {
+                LocalDate firstDay = today.withDayOfMonth(1);
+                yield firstDay.atStartOfDay(ZONE_ID).toInstant();
+            }
+            case "ALL" -> null;
+            default -> null;
+        };
     }
 
-    private CustomerCouponRes toCustomerCouponRes(CustomerCoupon cc) {
-        // CustomerCoupon ↔ Coupon faqat ID orqali bog'langan, shuning uchun repo dan olib kelamiz
-        Coupon coupon = couponRepository.findByIdAndDeletedAtIsNull(cc.getCouponId())
-                .orElse(null);  // kupon o'chib ketgan bo'lsa null bo'lishi mumkin
-
-        return new CustomerCouponRes(
-                cc.getId(),
-                cc.getStudioId(),
-                cc.getCouponId(),
-                coupon != null ? coupon.getName() : null,
-                coupon != null ? coupon.getDiscountRate() : null,
-                coupon != null ? coupon.getDiscountAmount() : null,
-                cc.getStatus(),
-                coupon != null ? coupon.getStartDate() : null,
-                coupon != null ? coupon.getExpiryDate() : null,
-                cc.getIssuedAt(),
-                cc.getUsedAt()
-        );
-    }
-
-
-    @Transactional(readOnly = true)
-    public List<CustomerCouponRes> listCouponsForCustomerUser(UUID customerUserId) {
-        // 1) userId → CustomerDetail topish (latest record)
+    // ----------------------------------------------------------------------
+    // HELPER: userId → customerId 변환
+    // ----------------------------------------------------------------------
+    private UUID resolveCustomerIdForUser(UUID userId) {
         var page1 = PageRequest.of(0, 1);
 
         var customerOpt = customerDetailRepository
-                .findActiveByUserIdOrderByUpdatedDesc(customerUserId, page1)
+                .findActiveByUserIdOrderByUpdatedDesc(userId, page1)
                 .stream()
                 .findFirst();
 
         if (customerOpt.isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
-                    "Customer not found"
+                    "Customer profili topilmadi"
             );
         }
 
-        CustomerDetail customer = customerOpt.get();
-
-        // 2) CustomerDetail.id (customerId) bo'yicha kuponlar (status=null → hammasi)
-        return getCouponsForCustomer(customer.getId(), null);
+        return customerOpt.get().getId();
     }
 
+    // ----------------------------------------------------------------------
+    // MAPPER: CustomerCoupon → CustomerCouponRes
+    // ----------------------------------------------------------------------
+    private CustomerCouponRes toCustomerCouponRes(CustomerCoupon cc) {
+        // CustomerCoupon ↔ Coupon ID 기반 연결
+        Coupon coupon = couponRepository.findByIdAndDeletedAtIsNull(cc.getCouponId())
+                .orElse(null);  // 쿠폰이 soft delete 되었을 수도 있음
 
+        Instant issuedAt = cc.getCreatedAt();  // 발급 시각 = CustomerCoupon.createdAt
+        Instant usedDateInstant = null;
+        if (coupon != null && coupon.getUsedDate() != null) {
+            usedDateInstant = coupon.getUsedDate()
+                    .atStartOfDay(ZONE_ID)
+                    .toInstant();
+        }
+
+        return new CustomerCouponRes(
+                cc.getId(),
+                cc.getStudioId(),
+                cc.getCouponId(),
+                coupon != null ? coupon.getName() : null,
+                coupon != null ? coupon.getDescription() : null,
+                coupon != null ? coupon.getDiscountRate() : null,
+                coupon != null ? coupon.getDiscountAmount() : null,
+                coupon != null ? coupon.getStatus() : null,
+                coupon != null ? coupon.getStartDate() : null,
+                coupon != null ? coupon.getExpiryDate() : null,
+                issuedAt,
+                usedDateInstant
+        );
+    }
 }

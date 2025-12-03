@@ -1,8 +1,6 @@
 package com.moden.modenapi.modules.admin;
 
 import com.moden.modenapi.common.response.ResponseMessage;
-import com.moden.modenapi.modules.auth.dto.AdminSimpleSignInReq;
-import com.moden.modenapi.modules.auth.dto.AuthResponse;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.modules.studio.dto.StudioCreateReq;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
@@ -10,7 +8,6 @@ import com.moden.modenapi.modules.studio.dto.StudioUpdateReq;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.security.PermitAll;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -50,10 +47,9 @@ public class AdminController {
     public ResponseEntity<ResponseMessage<StudioRes>> createStudio(
             @Valid @RequestPart("data") StudioCreateReq req,
             @RequestPart(value = "logoFile",    required = false) MultipartFile logoFile,
-            @RequestPart(value = "bannerFile",  required = false) MultipartFile bannerFile,
-            @RequestPart(value = "profileFile", required = false) MultipartFile profileFile
+            @RequestPart(value = "bannerFile",  required = false) MultipartFile bannerFile
     ) {
-        StudioRes result = adminService.createStudio(req, logoFile, bannerFile, profileFile);
+        StudioRes result = adminService.createStudio(req, logoFile, bannerFile);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ResponseMessage.success("Studio created successfully", result));
     }

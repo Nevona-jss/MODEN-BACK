@@ -1,6 +1,5 @@
 package com.moden.modenapi.common.service;
 
-import com.moden.modenapi.common.dto.UploadResponse;
 import com.moden.modenapi.common.utils.FileNameUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -19,13 +18,21 @@ public class ImageUploadService {
     @Value("${file.upload-dir:uploads/services}")
     private String uploadRoot;
 
-    /** events 폴더에 이미지 업로드 */
-    public UploadResponse uploadEventImage(MultipartFile file) throws Exception {
+    /**
+     * events 폴더에 이미지 업로드
+     * @return 업로드된 이미지의 public URL (예: /uploads/events/2025/11/24/xxx.jpg)
+     */
+    public String uploadEventImage(MultipartFile file) throws Exception {
         return uploadImage(file, "events");
     }
 
-    /** 공통 이미지 업로드 로직 (UploadController logic 복사) */
-    private UploadResponse uploadImage(MultipartFile file, String folder) throws Exception {
+    /**
+     * 공통 이미지 업로드 로직
+     * @param file   업로드 파일
+     * @param folder 업로드 하위 폴더명 (예: "events", "services" 등)
+     * @return public URL (String)
+     */
+    private String uploadImage(MultipartFile file, String folder) throws Exception {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("File is empty");
         }
@@ -33,7 +40,7 @@ public class ImageUploadService {
         folder = sanitizeFolder(folder);
         if (!StringUtils.hasText(folder)) folder = "misc";
 
-        // only image /*
+        // only image/*
         String ct = Objects.toString(file.getContentType(), "");
         if (!ct.startsWith("image/")) {
             String probed = Files.probeContentType(
@@ -61,17 +68,21 @@ public class ImageUploadService {
             throw new IllegalArgumentException("Invalid target path");
         }
 
+        // 원본 그대로 저장 (압축은 안 함) — 필요하면 Thumbnailator 로 교체 가능
         file.transferTo(dst.toFile());
 
         String relPath = folder + "/" + datePart + "/" + generated; // DB 저장용
         String url     = "/uploads/" + relPath;                      // public URL
 
-        return new UploadResponse(url, relPath, generated, file.getSize(), ct);
+        // 이제는 URL만 반환
+        return url;
     }
 
     private String sanitizeFolder(String folder) {
         if (!StringUtils.hasText(folder)) return "misc";
+        // 허용된 문자만
         folder = folder.replaceAll("[^a-zA-Z0-9_\\-/]", "_");
+        // 상위 경로 방지
         folder = folder.replace("..", "");
         while (folder.startsWith("/")) folder = folder.substring(1);
         return folder;

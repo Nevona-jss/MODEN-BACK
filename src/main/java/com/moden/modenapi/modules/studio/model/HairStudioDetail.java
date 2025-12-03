@@ -2,7 +2,6 @@ package com.moden.modenapi.modules.studio.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.moden.modenapi.common.enums.Position;
-import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -64,4 +63,19 @@ public class HairStudioDetail extends BaseEntity {
 
     @Column(precision = 10, scale = 7)
     private BigDecimal longitude;
+
+    @Column(name = "birthday_coupon_enabled", nullable = false)
+    private boolean birthdayCouponEnabled = false;
+
+    @Column(name = "birthday_coupon_description", columnDefinition = "nvarchar(max)")
+    private String birthdayCouponDescription;
+
+    /**
+     * 3) 보안 및 개인정보 안내 (HTML formatda keladi, lekin String sifatida saqlanadi)
+     *    HTML uzun bo‘lishi mumkin, shuning uchun nvarchar(max) + @Lob ishlatdik.
+     */
+    @Lob
+    @Column(name = "privacy_policy_html", columnDefinition = "nvarchar(max)")
+    private String privacyPolicyHtml;
+
 }

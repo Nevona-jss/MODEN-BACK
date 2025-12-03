@@ -1,23 +1,28 @@
 package com.moden.modenapi.modules.auth.service;
 
-import com.moden.modenapi.common.enums.Role;
+import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.modules.auth.dto.UserMeFullResponse;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
 import com.moden.modenapi.modules.customer.dto.CustomerResponse;
+import com.moden.modenapi.modules.customer.dto.CustomerResponseForMe;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
 import com.moden.modenapi.modules.designer.dto.DesignerResponse;
 import com.moden.modenapi.modules.designer.model.DesignerDetail;
 import com.moden.modenapi.modules.designer.repository.DesignerDetailRepository;
+import com.moden.modenapi.modules.reservation.repository.ReservationRepository;
+import com.moden.modenapi.modules.studio.dto.StudioBrief;
 import com.moden.modenapi.modules.studio.dto.StudioRes;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
+import com.moden.modenapi.modules.studioservice.repository.StudioServiceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -30,6 +35,8 @@ public class AuthMeService {
     private final HairStudioDetailRepository studioRepo;
     private final DesignerDetailRepository designerRepo;
     private final CustomerDetailRepository customerRepo;
+    private final ReservationRepository reservationRepo;
+    private final StudioServiceRepository studioServiceRepository;
 
     /** ✅ detail-only (HAIR_STUDIO/DESIGNER/CUSTOMER), ADMIN이면 기본 프로필(UserMeResponse) 반환 */
     public Object getMePayload(UUID userId, List<String> authorities) {
@@ -64,57 +71,110 @@ public class AuthMeService {
                 if (d == null) return buildAdminLikeBase(base);
                 var u = base.user;
 
-                // 안전하게 effective role 계산 (u.getRole() 없으면 DESIGNER로 fallback)
-                Role effectiveRole = (u != null && u.getRole() != null)
-                        ? u.getRole()
-                        : Role.DESIGNER;
-
                 String fullName = (u != null) ? u.getFullName() : null;
                 String phone    = (u != null) ? u.getPhone()    : null;
 
                 return new DesignerResponse(
-                        d.getUserId(),             // userId
-                        d.getHairStudioId(),       // studioId
+                        u != null ? u.getId()   : null,
                         d.getIdForLogin(),         // idForLogin
-
-                        effectiveRole,             // role
                         fullName,                  // fullName
                         phone,                     // phone
-
                         d.getPosition(),           // position
                         d.getStatus(),             // status
                         d.getDaysOff(),            // daysOff
+                        Collections.emptyList()   // portfolio (bu yerda portfolioni yuklamaymiz)
 
-                        Collections.emptyList(),   // portfolio (bu yerda portfolioni yuklamaymiz)
-
-                        d.getCreatedAt(),          // createdAt
-                        d.getUpdatedAt()           // updatedAt
                 );
             }
-
 
             case "CUSTOMER" -> {
                 var c = base.customer;
                 if (c == null) return buildAdminLikeBase(base);
                 var u = base.user;
-                return new CustomerResponse(
+
+                // Designer name toplash
+                String designerName = null;
+                if (c.getDesignerId() != null) {
+                    var designerDetail = designerRepo.findByIdAndDeletedAtIsNull(c.getDesignerId())
+                            .orElse(null);
+                    if (designerDetail != null) {
+                        var designerUser = userRepo.findActiveById(designerDetail.getUserId())
+                                .orElse(null);
+                        if (designerUser != null) {
+                            designerName = designerUser.getFullName();
+                        }
+                    }
+                }
+
+                StudioBrief studioInfo = null;
+
+                if (c.getStudioId() != null) {
+                    // 1) 먼저 studioId 로 스튜디오 디테일 찾기
+                    var studio = studioRepo.findByOwnerUserId(c.getStudioId()).orElse(null);
+
+                    if (studio != null) {
+                        // 2) 스튜디오의 owner user 가져오기
+                        var ownerOpt = userRepo.findActiveById(studio.getUserId());
+                        var owner = ownerOpt.orElse(null);
+
+                        String ownerName  = (owner != null ? owner.getFullName() : null); // getOwnerName = fullName
+                        String studioPhone = (owner != null ? owner.getPhone() : null);   // getStudioPhone = user.phone
+                        UUID ownerUserId = (owner != null ? owner.getId() : studio.getUserId());
+
+                        studioInfo = new StudioBrief(
+                                ownerUserId,                // studio pk
+                                ownerName,                      // ✅ user.fullName
+                                studioPhone,                    // ✅ user.phone
+                                studio.getLogoImageUrl(),       // ✅ detail
+                                studio.getBannerImageUrl()      // ✅ detail
+                        );
+                    }
+                }
+
+                // 🔥 Oxirgi service name + date
+                String lastServiceName = null;
+                LocalDate lastVisitDate = null;
+
+                var page1 = PageRequest.of(0, 1);
+
+                var latestList = reservationRepo.findLatestOneForCustomer(
+                        c.getId(),                        // CustomerDetail.id ni reservation.customerId ga yozayotgan bo‘lsang – to‘g‘ri
+                        ReservationStatus.COMPLETED,      // sendagi "tugagan" status nomiga mos
+                        page1
+                );
+
+                if (!latestList.isEmpty()) {
+                    var lastRes = latestList.get(0);
+                    lastVisitDate = lastRes.getReservationDate();
+
+                    var svcOpt = studioServiceRepository.findById(lastRes.getServiceId());
+                    if (svcOpt.isPresent()) {
+                        lastServiceName = svcOpt.get().getServiceName();
+                    }
+                }
+
+                return new CustomerResponseForMe(
                         c.getId(),
                         u != null ? u.getFullName() : null,
-                        u != null ? u.getPhone()    : null,
-                        u != null ? u.getRole()     : null,
+                        u != null ? u.getPhone() : null,
+                        u != null ? u.getRole() : null,
                         c.getEmail(),
                         c.getGender(),
+                        designerName,
                         c.getBirthdate(),
                         c.getAddress(),
                         c.getProfileImageUrl(),
                         c.getVisitReason(),
                         c.isConsentMarketing(),
-                        c.getDesignerId(),
-                        c.getStudioId()
+                        studioInfo,
+                        lastServiceName,
+                        lastVisitDate
                 );
             }
+
+
+
             default -> {
-                // ADMIN 또는 USER: detail 없이 기본 프로필 간단형 반환
                 return buildAdminLikeBase(base);
             }
         }
@@ -188,7 +248,6 @@ public class AuthMeService {
     }
 
     private Object buildAdminLikeBase(BaseAgg base) {
-        // ADMIN/USER 용 간단형 (detail 없이)
         return UserMeFullResponse.builder()
                 .userId(base.user.getId())
                 .fullName(base.user.getFullName())

@@ -16,7 +16,13 @@ public interface DesignerDetailRepository extends BaseRepository<DesignerDetail,
     Optional<DesignerDetail> findByUserIdAndDeletedAtIsNull(UUID userId);
     Optional<DesignerDetail> findByIdAndDeletedAtIsNull(UUID id);
 
+    Optional<DesignerDetail> findByUserIdAndHairStudioIdAndDeletedAtIsNull(
+            UUID userId,
+            UUID hairStudioId
+    );
     boolean existsByIdForLogin(String idForLogin);
+
+
 
     Optional<DesignerDetail> findByIdForLoginIgnoreCase(String idForLogin);
 

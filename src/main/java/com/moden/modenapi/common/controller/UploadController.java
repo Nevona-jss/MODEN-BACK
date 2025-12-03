@@ -1,6 +1,5 @@
 package com.moden.modenapi.common.controller;
 
-import com.moden.modenapi.common.dto.UploadResponse;
 import com.moden.modenapi.common.response.ResponseMessage;
 import com.moden.modenapi.common.utils.FileNameUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -10,7 +9,6 @@ import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,9 +27,6 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class UploadController {
 
-    // application.yml:
-    // file:
-    //   upload-dir: uploads
     @Value("${file.upload-dir:uploads}")
     private String uploadRoot; // e.g. /home/.../uploads
 
@@ -41,70 +36,101 @@ public class UploadController {
             Universal image upload endpoint.
             - Single: form field name = file
             - Multiple: form field name = files (array)
-            Response: List<UploadResponse> (even for single file)
+            Response: List<String> (image URLs).
             All files are stored directly under /uploads.
             """
     )
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ResponseMessage<List<UploadResponse>>> uploadUniversal(
+    public ResponseEntity<ResponseMessage<List<String>>> uploadUniversal(
             @RequestPart(value = "file", required = false) MultipartFile file,
             @RequestPart(value = "files", required = false) List<MultipartFile> files
-    ) throws Exception {
+    ) {
+        try {
+            List<MultipartFile> targetFiles = new ArrayList<>();
 
-        List<MultipartFile> targetFiles = new ArrayList<>();
-
-        // 단일 업로드(file)도 List에 합치기
-        if (file != null && !file.isEmpty()) {
-            targetFiles.add(file);
-        }
-
-        // 다중 업로드(files)도 추가
-        if (files != null) {
-            for (MultipartFile f : files) {
-                if (f != null && !f.isEmpty()) {
-                    targetFiles.add(f);
+            if (file != null && !file.isEmpty()) {
+                targetFiles.add(file);
+            }
+            if (files != null) {
+                for (MultipartFile f : files) {
+                    if (f != null && !f.isEmpty()) {
+                        targetFiles.add(f);
+                    }
                 }
             }
-        }
 
-        if (targetFiles.isEmpty()) {
+            if (targetFiles.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(ResponseMessage.failure("No files provided"));
+            }
+
+            List<String> urls = new ArrayList<>();
+            for (MultipartFile f : targetFiles) {
+                String url = processAndSaveImage(f);
+                urls.add(url);
+            }
+
+            return ResponseEntity.status(201)
+                    .body(ResponseMessage.success("Uploaded", urls));
+
+        } catch (IllegalArgumentException e) {
+            // 이미지가 아니거나 잘못된 파일 등
             return ResponseEntity.badRequest()
-                    .body(ResponseMessage.failure("No files provided"));
+                    .body(ResponseMessage.failure(e.getMessage()));
+        } catch (Exception e) {
+            e.printStackTrace(); // TODO: logger 로 교체
+            return ResponseEntity.internalServerError()
+                    .body(ResponseMessage.failure("Internal server error during upload"));
         }
-
-        List<UploadResponse> results = new ArrayList<>();
-        for (MultipartFile f : targetFiles) {
-            UploadResponse res = processAndSaveImage(f);
-            results.add(res);
-        }
-
-        return ResponseEntity.status(201)
-                .body(ResponseMessage.success("Uploaded", results));
     }
 
-    // ============================
-    //  🔽 common image + compress
-    // ============================
-    private UploadResponse processAndSaveImage(MultipartFile file) throws Exception {
+    /**
+     * 이미지 압축 + 저장 후, public URL(String) 만 반환
+     */
+    private String processAndSaveImage(MultipartFile file) throws Exception {
 
-        // content-type guard (allow only images)
-        String ct = Objects.toString(file.getContentType(), "");
-        if (!ct.startsWith("image/")) {
-            // (optional) try probe
-            String probed = Files.probeContentType(
-                    Path.of(Objects.requireNonNullElse(file.getOriginalFilename(), "file"))
-            );
-            if (probed == null || !probed.startsWith("image/")) {
-                throw new IllegalArgumentException("Only image uploads are allowed");
-            }
-            ct = probed;
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Empty file");
         }
 
-        // ⏱ unique file name (time + random + original ext)
-        Instant now = Instant.now();
-        String generated = FileNameUtil.generate(file.getOriginalFilename(), now);
+        // 1) 원본 파일명/확장자
+        String originalName = Objects.toString(file.getOriginalFilename(), "image");
+        String ext = "";
+        int dot = originalName.lastIndexOf('.');
+        if (dot != -1) {
+            ext = originalName.substring(dot + 1).toLowerCase();
+        }
 
-        // root directory: faqat bitta papka (uploadRoot)
+        // 2) 최종 저장 포맷 결정
+        //    - heic/heif 포함 “애매한” 확장자는 전부 jpg 로 통일
+        String targetFormat;
+        switch (ext) {
+            case "png":
+                targetFormat = "png";
+                break;
+            case "webp":
+                targetFormat = "webp";
+                break;
+            default:
+                // jpg, jpeg, heic, heif, heif, bmp, gif 등등 → 전부 jpg 로 저장
+                targetFormat = "jpg";
+                break;
+        }
+
+        // 3) unique file name 생성
+        Instant now = Instant.now();
+        String generated = FileNameUtil.generate(originalName, now);
+
+        // FileNameUtil 이 heic 같은 확장자 그대로 붙였을 수 있으니,
+        // 우리가 정한 targetFormat 으로 확장자 강제 변경
+        int genDot = generated.lastIndexOf('.');
+        if (genDot != -1) {
+            generated = generated.substring(0, genDot + 1) + targetFormat;
+        } else {
+            generated = generated + "." + targetFormat;
+        }
+
+        // 4) 저장 경로 준비
         Path root = Paths.get(uploadRoot).toAbsolutePath().normalize();
         if (!Files.exists(root)) {
             Files.createDirectories(root);
@@ -115,32 +141,19 @@ public class UploadController {
             throw new IllegalArgumentException("Invalid target path");
         }
 
-        // 🔻 IMAGE COMPRESS + SAVE
-        String format = "jpg";
-        if ("image/png".equalsIgnoreCase(ct)) {
-            format = "png";
-        } else if ("image/webp".equalsIgnoreCase(ct)) {
-            // Thumbnailator webp 지원이 애매해서 안전하게 jpg로 변환
-            format = "jpg";
-            ct = "image/jpeg";
-        } else {
-            ct = "image/jpeg";
-        }
-
+        // 5) 이미지로 읽어서 리사이즈 + 재인코딩
         try (InputStream in = file.getInputStream()) {
             Thumbnails.of(in)
-                    .size(1920, 1920)       // maksimal kenglik 1920px
-                    .outputFormat(format)
-                    .outputQuality(0.7f)    // web uchun ideal
+                    .size(1920, 1920)       // 최대 1920x1920
+                    .outputFormat(targetFormat)
+                    .outputQuality(0.7f)
                     .toFile(dst.toFile());
+        } catch (Exception e) {
+            // 이미지로 디코딩이 안 되면 여기서 에러
+            throw new IllegalArgumentException("Only image uploads are allowed");
         }
 
-
-        long compressedSize = Files.size(dst);
-
-        String relPath = generated;               // DB 저장용
-        String url     = "/uploads/" + generated; // static resource 매핑 필요
-
-        return new UploadResponse(url, relPath, generated, compressedSize, ct);
+        return "/uploads/" + generated;
     }
+
 }

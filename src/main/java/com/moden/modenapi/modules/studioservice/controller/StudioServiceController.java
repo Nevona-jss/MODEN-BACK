@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "HAIR STUDIO-SERVICE")
+@Tag(name = "SERVICE")
 @RestController
 @RequestMapping("/api/studios/services")
 @RequiredArgsConstructor
@@ -37,6 +37,8 @@ public class StudioServiceController {
         StudioServiceRes res = studioServiceService.create(studioId, req);
         return ResponseEntity.ok(ResponseMessage.success("Studio service created.", res));
     }
+
+
 
 
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")

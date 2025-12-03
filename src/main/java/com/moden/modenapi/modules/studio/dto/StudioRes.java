@@ -30,8 +30,8 @@ public record StudioRes(
         String description,
         String logoImageUrl,
         String bannerImageUrl,
-        String naverUrl,
-        String kakaoUrl,
+        String naver,
+        String kakao,
         BigDecimal latitude,
         BigDecimal longitude
 ) {}
