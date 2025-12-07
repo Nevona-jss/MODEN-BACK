@@ -2,8 +2,8 @@ package com.moden.modenapi.modules.consultation.service;
 
 import com.moden.modenapi.common.enums.ConsultationStatus;
 import com.moden.modenapi.common.enums.PaymentStatus;
-import com.moden.modenapi.common.service.BaseService;
 import com.moden.modenapi.common.dto.FilterParams;
+import com.moden.modenapi.common.service.BaseService;
 import com.moden.modenapi.common.utils.CurrentUserUtil;
 import com.moden.modenapi.modules.consultation.dto.*;
 import com.moden.modenapi.modules.consultation.model.Consultation;
@@ -83,7 +83,7 @@ public class ConsultationService extends BaseService<Consultation> {
     }
 
     // --------------------------------------------------------------------
-    // 🔹 상담 수정
+    // 🔹 상담 수정 (컨트롤러에서 그대로 update(id, req) 사용)
     // --------------------------------------------------------------------
     public ConsultationRes update(UUID id, ConsultationUpdateReq req) {
         Consultation c = consultationRepository.findById(id)
@@ -106,25 +106,22 @@ public class ConsultationService extends BaseService<Consultation> {
     }
 
     // --------------------------------------------------------------------
-    // 🔹 FilterParams (period, serviceNames ...) 기반 목록
+    // 🔹 FilterParams (period, serviceNames ...) 기반 목록 (고객용)
     // --------------------------------------------------------------------
-    // ConsultationService ichida
     @Transactional(readOnly = true)
     public List<ConsultationRes> listForCustomerFiltered(FilterParams filterParams) {
 
-        // userId currentUser’dan olinadi
         UUID customerId = CurrentUserUtil.currentUserId();
 
         Specification<Consultation> spec =
                 ConsultationSpecifications.fromFilterParams(customerId, filterParams);
 
-        // sort: 가장 최근 상담부터
+        // 가장 최근 상담부터
         Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
 
         List<Consultation> list = consultationRepository.findAll();
-        return toResListWithReservations(list);  // 이미 있는 mapper
+        return toResListWithReservations(list);
     }
-
 
     // --------------------------------------------------------------------
     // 🔹 고객 메모 업데이트
@@ -147,23 +144,26 @@ public class ConsultationService extends BaseService<Consultation> {
         return toRes(c, r);
     }
 
+    // --------------------------------------------------------------------
+    // 🔹 고객용 검색 (serviceId / serviceNameKeyword / 날짜)
+    // --------------------------------------------------------------------
     public List<Consultation> search(ConsultationSearchReq req) {
 
         UUID serviceId = req.serviceId();
         String serviceNameKeyword = req.serviceNameKeyword();
 
-        // Agar serviceNameKeyword bo‘lsa – shuni ishlatamiz
+        // serviceNameKeyword가 있으면 우선 사용
         if (serviceNameKeyword != null && !serviceNameKeyword.isBlank()) {
             return consultationRepository.searchDynamicForCustomer(
                     req.customerId(),
-                    null,                 // serviceId ni e’tiborsiz qoldiryapmiz yoki istasang ikkalasini ham yuborish mumkin
+                    null,                 // serviceId 무시 (필요하면 둘 다 사용하는 버전으로 변경 가능)
                     serviceNameKeyword,
                     req.fromDate(),
                     req.toDate()
             );
         }
 
-        // Aks holda oldingi serviceId bo‘yicha qidiruv
+        // 아니면 serviceId 기준 검색
         return consultationRepository.searchDynamicForCustomer(
                 req.customerId(),
                 serviceId,
@@ -173,8 +173,9 @@ public class ConsultationService extends BaseService<Consultation> {
         );
     }
 
-
-
+    // --------------------------------------------------------------------
+    // 🔹 스튜디오에서 특정 고객 상담 조회
+    // --------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<ConsultationRes> listForStudioByCustomer(
             UUID customerId,
@@ -190,9 +191,10 @@ public class ConsultationService extends BaseService<Consultation> {
                 ? toDate.plusDays(1).atStartOfDay(ZoneId.of("Asia/Tashkent")).toInstant()
                 : Instant.now();
 
-        // ✔ Custom JPQL query
+        // ✔ Custom native query (serviceId 필터는 사용 안 하므로 null)
         List<Consultation> list = consultationRepository.findForCustomerWithFilters(
                 customerId,
+                null,      // serviceId
                 status,
                 from,
                 to
@@ -203,9 +205,21 @@ public class ConsultationService extends BaseService<Consultation> {
                 .toList();
     }
 
+    // --------------------------------------------------------------------
+    // 🔹 Reservation → 대표 서비스 이름 (serviceIds 중 첫 번째)
+    // --------------------------------------------------------------------
+    private String resolveServiceNameForReservation(Reservation r) {
+        if (r.getServiceIds() == null || r.getServiceIds().isEmpty()) {
+            return null;
+        }
+        // 대표 서비스 하나만 사용 (첫 번째)
+        UUID mainServiceId = r.getServiceIds().get(0);
+        return resolveServiceName(mainServiceId); // 기존에 있던 메서드: UUID → String
+    }
 
-    // importlar, class definitsiyasi…
-
+    // --------------------------------------------------------------------
+    // 🔹 mapToDto: 스튜디오/직원용 상세 DTO
+    // --------------------------------------------------------------------
     private ConsultationRes mapToDto(Consultation c) {
         Reservation r = reservationRepository.findById(c.getReservationId())
                 .orElseThrow(() -> new ResponseStatusException(
@@ -218,7 +232,9 @@ public class ConsultationService extends BaseService<Consultation> {
         UUID designerIdForName  = (c.getDesignerId() != null) ? c.getDesignerId() : r.getDesignerId();
         String designerName     = resolveDesignerFullName(designerIdForName);
         String designerPosition = resolveDesignerPosition(designerIdForName);
-        String serviceName      = resolveServiceName(r.getServiceId());
+
+        String serviceName      = resolveServiceNameForReservation(r);
+
         BigDecimal totalAmount  = resolveTotalPaymentAmount(r.getId());
         PaymentStatus paymentStatus = resolvePaymentStatus(r.getId());
 
@@ -248,6 +264,7 @@ public class ConsultationService extends BaseService<Consultation> {
                 c.getDeletedAt()
         );
     }
+
     private String resolveDesignerPosition(UUID designerId) {
         if (designerId == null) {
             return null;
@@ -258,10 +275,8 @@ public class ConsultationService extends BaseService<Consultation> {
         return (dd != null) ? String.valueOf(dd.getPosition()) : null;
     }
 
-
-
     // --------------------------------------------------------------------
-    // 🔹 Mapper
+    // 🔹 Mapper (기본용)
     // --------------------------------------------------------------------
     private ConsultationRes toRes(Consultation c, Reservation r) {
 
@@ -269,7 +284,9 @@ public class ConsultationService extends BaseService<Consultation> {
         String customerName     = resolveCustomerFullName(r.getCustomerId());
         UUID designerIdForName  = (c.getDesignerId() != null) ? c.getDesignerId() : r.getDesignerId();
         String designerName     = resolveDesignerFullName(designerIdForName);
-        String serviceName      = resolveServiceName(r.getServiceId());
+
+        String serviceName      = resolveServiceNameForReservation(r);
+
         BigDecimal totalAmount  = resolveTotalPaymentAmount(r.getId());
         PaymentStatus paymentStatus = resolvePaymentStatus(r.getId());
 
@@ -300,6 +317,8 @@ public class ConsultationService extends BaseService<Consultation> {
     }
 
     // --------------------------------------------------------------------
+    // 🔹 리스트 변환
+    // --------------------------------------------------------------------
     private List<ConsultationRes> toResListWithReservations(List<Consultation> list) {
         if (list.isEmpty()) return List.of();
 
@@ -315,6 +334,10 @@ public class ConsultationService extends BaseService<Consultation> {
                 .map(c -> toRes(c, map.get(c.getReservationId())))
                 .toList();
     }
+
+    // --------------------------------------------------------------------
+    // 🔹 직원용 검색 (Specification 기반)
+    // --------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<ConsultationRes> searchForStaff(
             UUID designerId,
@@ -327,9 +350,16 @@ public class ConsultationService extends BaseService<Consultation> {
         Specification<Consultation> spec = ConsultationSpecifications.forStaff(
                 designerId, customerId, serviceId, status, fromDate, toDate
         );
-        List<Consultation> list = consultationRepository.findAll((Sort) spec);
+
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
+
+        List<Consultation> list = consultationRepository.findAll();
         return toResListWithReservations(list);
     }
+
+    // --------------------------------------------------------------------
+    // 🔹 디자이너 기준 목록
+    // --------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<ConsultationRes> listForDesigner(UUID designerId) {
         // 1) 디자이너의 예약들
@@ -354,6 +384,7 @@ public class ConsultationService extends BaseService<Consultation> {
                 })
                 .toList();
     }
+
     // --------------------------------------------------------------------
     // 🔹 Placeholder resolver
     // --------------------------------------------------------------------

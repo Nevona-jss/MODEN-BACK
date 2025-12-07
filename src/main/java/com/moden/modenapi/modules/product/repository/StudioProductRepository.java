@@ -16,6 +16,7 @@ public interface StudioProductRepository extends BaseRepository<StudioProduct, U
     // 단건(삭제되지 않은 것만)
     Optional<StudioProduct> findByIdAndDeletedAtIsNull(UUID id);
 
+
     // 스튜디오별 목록(삭제되지 않은 것만, 최신순)
     List<StudioProduct> findAllByStudioIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID studioId);
 

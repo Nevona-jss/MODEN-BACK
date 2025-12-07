@@ -4,6 +4,7 @@ import com.moden.modenapi.common.dto.FilterParams;
 import com.moden.modenapi.common.enums.ConsultationStatus;
 import com.moden.modenapi.modules.consultation.dto.ConsultationFilter;
 import com.moden.modenapi.modules.consultation.model.Consultation;
+import com.moden.modenapi.modules.reservation.model.Reservation;
 import com.moden.modenapi.modules.studioservice.model.StudioService;
 import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
@@ -108,7 +109,6 @@ public class ConsultationSpecifications {
         return filter(customerId, cf);
     }
 
-    /** 디자이너/스태프용 검색 (기존 그대로 두면 됨) */
     public static Specification<Consultation> forStaff(
             UUID designerId,
             UUID customerId,
@@ -118,30 +118,45 @@ public class ConsultationSpecifications {
             LocalDate toDate
     ) {
         return (root, query, cb) -> {
-            List<Predicate> preds = new ArrayList<>();
+            List<Predicate> predicates = new ArrayList<>();
 
-            if (status != null) {
-                preds.add(cb.equal(root.get("status"), status));
-            }
+            // Consultation → Reservation 조인
+            Join<Consultation, Reservation> reservationJoin =
+                    root.join("reservationId"); // 여기는 실제 매핑 필드명에 맞게 수정 필요
+            // 만약 @ManyToOne Reservation reservation; 로 매핑해 두었다면 "reservation" 으로
+
             if (designerId != null) {
-                preds.add(cb.equal(root.get("designerId"), designerId));
+                predicates.add(cb.equal(reservationJoin.get("designerId"), designerId));
             }
             if (customerId != null) {
-                preds.add(cb.equal(root.get("customerId"), customerId));
-            }
-            if (serviceId != null) {
-                preds.add(cb.equal(root.get("service").get("id"), serviceId));
-            }
-            if (fromDate != null) {
-                Instant from = fromDate.atStartOfDay(ZONE).toInstant();
-                preds.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from));
-            }
-            if (toDate != null) {
-                Instant to = toDate.plusDays(1).atStartOfDay(ZONE).toInstant();
-                preds.add(cb.lessThan(root.get("createdAt"), to));
+                predicates.add(cb.equal(reservationJoin.get("customerId"), customerId));
             }
 
-            return cb.and(preds.toArray(new Predicate[0]));
+            // 🔥 serviceIds ElementCollection 조인
+            if (serviceId != null) {
+                Join<Reservation, UUID> serviceIdsJoin = reservationJoin.join("serviceIds");
+                predicates.add(cb.equal(serviceIdsJoin, serviceId));
+            }
+
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+
+            if (fromDate != null) {
+                predicates.add(cb.greaterThanOrEqualTo(
+                        reservationJoin.get("reservationDate"), fromDate
+                ));
+            }
+            if (toDate != null) {
+                predicates.add(cb.lessThanOrEqualTo(
+                        reservationJoin.get("reservationDate"), toDate
+                ));
+            }
+
+            // soft delete 제외
+            predicates.add(cb.isNull(root.get("deletedAt")));
+
+            return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
 }

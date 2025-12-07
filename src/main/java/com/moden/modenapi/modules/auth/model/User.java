@@ -19,7 +19,7 @@ import java.time.Instant;
 public class User  extends BaseEntity {
 
     @Column(length = 150)
-    protected String fullName;   // ✅ shared across entities (user, studio, etc.)
+    protected String fullName;   
 
     @Column(nullable = false, length = 20)
     private String phone;

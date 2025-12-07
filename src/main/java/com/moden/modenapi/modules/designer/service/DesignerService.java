@@ -5,6 +5,7 @@ import com.moden.modenapi.common.enums.Position;
 import com.moden.modenapi.common.enums.Role;
 import com.moden.modenapi.common.enums.Weekday;
 import com.moden.modenapi.common.service.BaseService;
+import com.moden.modenapi.common.service.StudioContextService;
 import com.moden.modenapi.modules.auth.model.AuthLocal;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.AuthLocalRepository;
@@ -29,6 +30,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +44,7 @@ public class DesignerService extends BaseService<DesignerDetail> {
     private final AuthLocalRepository authLocalRepository;
     private final PasswordEncoder passwordEncoder;
     private final DesignerPortfolioService  portfolioService;
+    private final StudioContextService studioContextService;
 
     @Override
     protected JpaRepository<DesignerDetail, UUID> getRepository() {
@@ -371,55 +374,63 @@ public class DesignerService extends BaseService<DesignerDetail> {
     }
 
 
-    /* ===================== LIST: CURRENT STUDIO ===================== */
-
     @Transactional(readOnly = true)
     public List<DesignerResponse> listDesignersForCurrentStudio(
             String keyword,
             boolean onlyActive
     ) {
-        UUID studioId = getStudioIdFromCurrentStudio();
+        // 1) 현재 로그인한 actor 기준으로 studioUserId 가져오기
+        UUID studioId = studioContextService.resolveStudioIdForCurrentUser();
 
-        List<DesignerDetail> designers =
-                designerRepository.findAllActiveByHairStudioIdOrderByUpdatedDesc(studioId);
+        // 2) 스튜디오에 속한 디자이너 목록 조회 (active 여부에 따라 분기)
+        List<DesignerDetail> designers = onlyActive
+                ? designerRepository.findAllActiveByHairStudioIdOrderByUpdatedDesc(studioId)
+                : designerRepository.findAllByHairStudioIdOrderByUpdatedAtDesc(studioId);
 
         if (designers.isEmpty()) {
             return List.of();
         }
 
+        // 3) userId → User 매핑 (N+1 방지)
+        List<UUID> userIds = designers.stream()
+                .map(DesignerDetail::getUserId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        Map<UUID, User> userMap = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
         List<DesignerResponse> result = new ArrayList<>();
 
         for (DesignerDetail d : designers) {
+            User user = userMap.get(d.getUserId());
 
-            if (onlyActive && d.getDeletedAt() != null) {
-                continue;
-            }
-
-            User user = userRepository.findById(d.getUserId()).orElse(null);
-
-            var portfolioUrls = portfolioRepo
-                    .findAllByDesignerIdAndDeletedAtIsNullOrderByCreatedAtAsc(d.getId())
-                    .stream()
-                    .map(DesignerPortfolioItem::getImageUrl)
-                    .toList();
-
-            DesignerResponse res = mapToRes(d, user, portfolioUrls);
-
+            // 4) keyword 필터 (이름 / 이메일 기준)
             if (keyword != null && !keyword.isBlank()) {
                 String k = keyword.toLowerCase();
 
                 String name = "";
                 String email = "";
                 if (user != null) {
-                    name  = Optional.ofNullable(user.getFullName()).orElse("").toLowerCase();
-                    // email 필드 있으면 여기서 세팅
+                    name = Optional.ofNullable(user.getFullName()).orElse("").toLowerCase();
+                    // email 필드 있으면 여기에 추가
+                    // email = Optional.ofNullable(user.getEmail()).orElse("").toLowerCase();
                 }
 
                 if (!name.contains(k) && !email.contains(k)) {
-                    continue;
+                    continue; // 이 디자이너는 결과에서 제외
                 }
             }
 
+            // 5) 포트폴리오 이미지 URL 목록
+            var portfolioUrls = portfolioRepo
+                    .findAllByDesignerIdAndDeletedAtIsNullOrderByCreatedAtAsc(d.getId())
+                    .stream()
+                    .map(DesignerPortfolioItem::getImageUrl)
+                    .toList();
+
+            // 6) 최종 DTO 매핑
+            DesignerResponse res = mapToRes(d, user, portfolioUrls);
             result.add(res);
         }
 
@@ -464,18 +475,6 @@ public class DesignerService extends BaseService<DesignerDetail> {
     }
 
 
-    private static final SecureRandom RND = new SecureRandom();
-    private String generateDesignerLoginCode() {
-        // DS-ABCDE-12345
-        String letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 5; i++) {
-            sb.append(letters.charAt(RND.nextInt(letters.length())));
-        }
-        int digits = 10000 + RND.nextInt(90000);
-        return "DS-" + sb + "-" + digits;
-    }
-
     private DesignerResponse mapToRes(
             DesignerDetail d,
             User user,
@@ -484,13 +483,16 @@ public class DesignerService extends BaseService<DesignerDetail> {
         UUID userId   = (user != null) ? user.getId()        : null;
         String fullName = (user != null) ? user.getFullName() : null;
         String phone    = (user != null) ? user.getPhone()    : null;
+        String role    = (user != null) ? String.valueOf(user.getRole()) : null;
 
         return new DesignerResponse(
                 userId,
+                d.getHairStudioId(),
                 d.getIdForLogin(),
                 fullName,
                 phone,
                 d.getPosition(),
+                role,
                 d.getStatus(),
                 d.getDaysOff(),
                 portfolioUrls

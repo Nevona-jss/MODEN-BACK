@@ -4,13 +4,18 @@ import com.moden.modenapi.common.enums.PaymentMethod;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 @Schema(description = "오프라인 결제 확정 요청 (포인트/쿠폰 적용)")
 public record PaymentCreateReq(
 
-        @Schema(description = "예약 ID (UUID)", requiredMode = Schema.RequiredMode.REQUIRED)
-        UUID reservationId,
+        @Schema(
+                description = "선택한 상품 목록 (여러 개 가능)",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        List<PaymentProductLineReq> products,
+
 
         @Schema(
                 description = "선택한 제품(샴푸, 트리트먼트 등) 총 금액",

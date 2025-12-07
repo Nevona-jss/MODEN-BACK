@@ -13,13 +13,10 @@ import com.moden.modenapi.modules.coupon.dto.CouponFirstRegisterRes;
 import com.moden.modenapi.modules.coupon.dto.CouponResponse;
 import com.moden.modenapi.modules.coupon.service.CouponService;
 import com.moden.modenapi.modules.coupon.service.CustomerCouponService;
-import com.moden.modenapi.modules.customer.dto.CustomerListPageRes;
-import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
-import com.moden.modenapi.modules.customer.dto.CustomerResponse;
-import com.moden.modenapi.modules.customer.dto.CustomerResponseForList;
-import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
+import com.moden.modenapi.modules.customer.dto.*;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
+import com.moden.modenapi.modules.designer.model.DesignerDetail;
 import com.moden.modenapi.modules.designer.repository.DesignerDetailRepository;
 import com.moden.modenapi.modules.reservation.repository.ReservationRepository;
 import com.moden.modenapi.modules.studio.model.HairStudioDetail;
@@ -28,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -46,7 +44,6 @@ public class CustomerService extends BaseService<CustomerDetail> {
     private final UserRepository userRepo;
     private final CustomerDetailRepository customerRepo;
     private final HairStudioDetailRepository studioRepo;
-    private final AuthLocalService authLocalService;
     private final DesignerDetailRepository designerDetailRepository;
     private final CouponService couponService;
     private final CustomerCouponService customerCouponService;
@@ -55,55 +52,90 @@ public class CustomerService extends BaseService<CustomerDetail> {
 
 
     @Transactional
-    public void customerRegister(CustomerSignUpRequest req, String rawPassword) {
+    public CustomerSignUpRes customerRegister(CustomerSignUpRequest req) {
+
         // 0) phone unique check
         userRepo.findByPhone(req.phone()).ifPresent(u -> {
             throw new IllegalArgumentException("User already registered with this phone number.");
         });
 
-        // 1) Create User (CUSTOMER)
+        // 1) User 생성
         User user = User.builder()
                 .fullName(req.fullName())
                 .phone(req.phone())
                 .role(Role.CUSTOMER)
                 .build();
         userRepo.save(user);
-        authLocalService.createOrUpdatePassword(user.getId(), rawPassword);
 
-        // 2) 현재 로그인한 actor (HAIR_STUDIO 또는 DESIGNER) 기준으로 studioId 구함
+
+        // 2) 현재 로그인한 actor 기준 studioId
         UUID studioIdForActor = resolveStudioIdForCurrentActor(null);
 
-        // 3) 기본 담당 디자이너 (옵션)
-        UUID assignedDesignerId = resolveDesignerForAssignment(null, studioIdForActor);
+        // 3) 담당 디자이너 결정
+        UUID assignedDesignerId = null;
 
-        // 4) CustomerDetail 생성 (여기서 고객의 studioId 확정)
+        // 3-1) 요청에서 넘어온 designerId 우선 사용
+        if (req.designerId() != null && !req.designerId().isBlank()) {
+            try {
+                assignedDesignerId = UUID.fromString(req.designerId());
+            } catch (IllegalArgumentException e) {
+                assignedDesignerId = null; // 형식 잘못되면 무시하고 자동 배정
+            }
+        }
+
+        // 3-2) 없으면 자동 배정
+        if (assignedDesignerId == null) {
+            assignedDesignerId = resolveDesignerForAssignment(null, studioIdForActor);
+        }
+
+        // 4) CustomerDetail 저장 (요청 데이터 모두 저장)
+        boolean consentMarketingValue = req.consentMarketing() != null && req.consentMarketing();
+
         CustomerDetail cd = CustomerDetail.builder()
                 .userId(user.getId())
-                .studioId(studioIdForActor)   // 고객이 속한 studio
+                .studioId(studioIdForActor)
                 .designerId(assignedDesignerId)
-                .email(null)
-                .consentMarketing(false)
+
+                .email(req.email())
+                .gender(req.gender())
+                .birthdate(req.birthdate())
+                .address(req.address())
+                .visitReason(req.visitReason())
+
+                .consentMarketing(consentMarketingValue)
                 .notificationEnabled(false)
+                .profileImageUrl(null)
                 .build();
         customerRepo.save(cd);
 
-        // 5) 첫 방문 쿠폰 생성 (CustomerDetail 기준)
+        // 5) 첫 방문 쿠폰 생성 + 할당 (내부 로직용, 응답에는 안 담음)
         CouponFirstRegisterRes createdCoupon =
                 couponService.createFirstVisitCouponForCustomer(cd);
 
-        // 6) 고객에게 쿠폰 할당 (customer_coupon INSERT)
         customerCouponService.assignToCustomer(
-                cd.getStudioId(),      // studioId
-                createdCoupon.id(),    // coupon_id
-                cd.getId()             // customer_id (CustomerDetail.id)
+                cd.getStudioId(),
+                createdCoupon.id(),
+                cd.getUserId()
         );
 
-        // 7) CustomerDetail 에 첫 방문 쿠폰 ID 저장
+
         cd.setFirstVisitCouponId(createdCoupon.id());
         customerRepo.save(cd);
+
+        // 6) 프론트에서 필요로 하는 필드만 담아서 응답
+        return new CustomerSignUpRes(
+                user.getId(),            // id
+                user.getFullName(),      // fullName
+                user.getPhone(),         // phone
+                user.getRole(),          // role
+                req.email(),             // email
+                req.gender(),            // gender
+                assignedDesignerId,      // designerId
+                req.birthdate(),         // birthdate
+                req.address(),           // address
+                req.visitReason()        // visitReason
+        );
     }
-
-
 
 
     /* ================= Helpers: context ================= */
@@ -216,22 +248,84 @@ public class CustomerService extends BaseService<CustomerDetail> {
 
     @Transactional
     public CustomerDetail updateCustomerAsStudio(UUID customerUserId, CustomerProfileUpdateReq req) {
-        UUID studioUserId = currentUserId();
-        HairStudioDetail studio = requireStudioByOwner(studioUserId);
+        UUID currentUserId = currentUserId();  // CurrentUserUtil.currentUserId() 같은 거겠죠
 
-        CustomerDetail target = customerRepo.findOneActiveInStudio(customerUserId, studio.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not in this studio"));
+        // ---- 1) 현재 유저 권한 확인 (OWNER / DESIGNER) ----
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
+        boolean isStudioOwner = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_HAIR_STUDIO")); // 권한 이름은 프로젝트에 맞게
+        boolean isDesigner = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_DESIGNER"));
+
+        if (!isStudioOwner && !isDesigner) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Only studio owner or designer can edit customer profile"
+            );
+        }
+
+        CustomerDetail target;
+
+        // ---- 2-A) STUDIO OWNER: 자기 스튜디오에 속한 고객만 수정 ----
+        if (isStudioOwner) {
+            // owner 기준으로 스튜디오 조회 (기존 로직 활용)
+            HairStudioDetail studio = requireStudioByOwner(currentUserId);
+
+            // 중요: CustomerDetail.studioId 에 ownerUserId 가 들어있다면 studio.getUserId() 사용
+            //      (이전 대화에서 그 구조라고 했었음)
+            UUID studioUserId = studio.getUserId();
+
+            target = customerRepo
+                    .findOneActiveInStudio(customerUserId, studioUserId)
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            "Customer not in this studio"
+                    ));
+        }
+
+        // ---- 2-B) DESIGNER: 자기에게 연결된 고객만 수정 ----
+        else { // isDesigner == true
+            // 현재 디자이너의 DesignerDetail 가져오기
+            var designers = designerDetailRepository
+                    .findActiveByUserIdOrderByUpdatedDesc(currentUserId, PageRequest.of(0, 1));
+
+            if (designers.isEmpty()) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "Designer is not associated with any studio"
+                );
+            }
+
+            DesignerDetail designerDetail = designers.get(0);
+
+            // CustomerDetailRepository 안의 쿼리 사용:
+            //  - c.userId = :customerUserId
+            //  - (c.designerId = :designerDetailId or c.designerId = :designerUserId)
+            target = customerRepo
+                    .findOneActiveForDesigner(
+                            customerUserId,
+                            designerDetail.getId(), // designerDetailId
+                            currentUserId           // designerUserId
+                    )
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            "Customer not assigned to this designer"
+                    ));
+        }
+
+        // ---- 3) 프로필 적용 + 저장 ----
         applyProfile(target, req);
         return customerRepo.save(target);
     }
+
 
     @Transactional
     public void deleteCustomerAsStudio(UUID customerUserId) {
         UUID studioUserId = currentUserId();
         HairStudioDetail studio = requireStudioByOwner(studioUserId);
 
-        CustomerDetail target = customerRepo.findOneActiveInStudio(customerUserId, studio.getId())
+        CustomerDetail target = customerRepo.findOneActiveInStudio(customerUserId, studio.getUserId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Customer not in this studio"));
 
         userRepo.findActiveById(customerUserId).ifPresent(u -> {
@@ -242,44 +336,112 @@ public class CustomerService extends BaseService<CustomerDetail> {
         customerRepo.save(target);
     }
 
-    /**
-     * 현재 로그인한 HAIR_STUDIO 사용자의 스튜디오에 속한 customer인지 검증.
-     * 아니라면 403.
-     */
     @Transactional(readOnly = true)
     public CustomerDetail ensureCustomerOfCurrentStudio(UUID customerUserId) {
-        UUID ownerUserId = CurrentUserUtil.currentUserId();
 
-        var studios = studioRepo.findActiveByUserIdOrderByUpdatedDesc(
-                ownerUserId, PageRequest.of(0, 1)
-        );
-        if (studios.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Studio not found for current user");
-        }
-        UUID studioId = studios.get(0).getId();
 
-        return customerRepo
-                .findByUserIdAndHairStudioIdAndDeletedAtIsNull(customerUserId, studioId)
+        User customerUser = userRepo.findById(customerUserId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.FORBIDDEN,
-                        "Customer does not belong to your studio"
+                        HttpStatus.NOT_FOUND,
+                        "Customer user not found"
                 ));
+
+        // 1) CustomerDetail ni userId bo‘yicha olamiz
+        CustomerDetail customerDetail = customerRepo
+                .findActiveByUserId(customerUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Customer detail not found"
+                ));
+
+        UUID customerStudioId = customerDetail.getStudioId();
+        UUID currentUserId = CurrentUserUtil.currentUserId();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        boolean isStudioOwner = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_HAIR_STUDIO"));  // loyihang nomiga moslashtir
+        boolean isDesigner = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_DESIGNER"));
+
+        if (!isStudioOwner && !isDesigner) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Only studio owner or designer can access customers"
+            );
+        }
+
+        // 1) STUDIO OWNER flow
+        if (isStudioOwner) {
+            var studios = studioRepo.findActiveByUserIdOrderByUpdatedDesc(
+                    currentUserId, PageRequest.of(0, 1)
+            );
+            if (studios.isEmpty()) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "Studio not found for current user"
+                );
+            }
+            UUID studioId = studios.get(0).getUserId();
+
+            return customerRepo
+                    .findOneActiveInStudio(customerUserId, studioId)
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.FORBIDDEN,
+                            "Customer does not belong to your studio"
+                    ));
+        }
+
+        // 2) DESIGNER flow
+        if (isDesigner) {
+            var designers = designerDetailRepository
+                    .findActiveByUserIdOrderByUpdatedDesc(currentUserId, PageRequest.of(0, 1));
+
+            if (designers.isEmpty()) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "Designer is not associated with any studio"
+                );
+            }
+
+            var designerDetail = designers.get(0);
+
+            return customerRepo
+                    .findOneActiveForDesigner(
+                            customerUserId,             // customer userId
+                            designerDetail.getId(),     // designerDetailId
+                            currentUserId               // designerUserId
+                    )
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.FORBIDDEN,
+                            "Customer does not belong to your studio or not assigned to you"
+                    ));
+        }
+
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Unknown role");
     }
+
+
+
+
+
 
     /* ================= CUSTOMER PROFILE (for studio) ================= */
-
     @Transactional(readOnly = true)
     public CustomerResponse getCustomerProfileForStudio(UUID customerUserId) {
-        // 1) 현재 스튜디오 소속인지 검증 + CustomerDetail 로드
+        // 1) Studio/designer access tekshirish + CustomerDetail olish
         CustomerDetail c = ensureCustomerOfCurrentStudio(customerUserId);
 
-        // 2) User 정보 로드
-        User u = userRepo.findActiveById(customerUserId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found or deleted"));
+        // 2) User 정보 로드 (customer'ning User row'i)
+        User u = userRepo.findById(customerUserId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "User not found or deleted"
+                ));
 
-        // 3) DTO 매핑 (profile에서 필요한 필드들)
+        // 3) DTO mapping
         return toCustomerProfileResponse(c, u);
     }
+
 
     /* ================= CUSTOMER LIST (for studio) ================= */
 

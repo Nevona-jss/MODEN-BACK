@@ -22,6 +22,9 @@ public interface DesignerDetailRepository extends BaseRepository<DesignerDetail,
     );
     boolean existsByIdForLogin(String idForLogin);
 
+    List<DesignerDetail> findAllByHairStudioIdAndDeletedAtIsNullOrderByUpdatedAtDesc(UUID hairStudioId);
+
+    List<DesignerDetail> findAllByHairStudioIdOrderByUpdatedAtDesc(UUID hairStudioId);
 
 
     Optional<DesignerDetail> findByIdForLoginIgnoreCase(String idForLogin);

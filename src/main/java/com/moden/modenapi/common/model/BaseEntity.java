@@ -32,8 +32,11 @@ public abstract class BaseEntity {
     @CreatedDate @Column(nullable = false, updatable = false)
     protected Instant createdAt;
 
-    @LastModifiedDate @Column(nullable = false)
+    @LastModifiedDate @Column(nullable = true)
     protected Instant updatedAt;
 
     protected Instant deletedAt;
 }
+
+
+

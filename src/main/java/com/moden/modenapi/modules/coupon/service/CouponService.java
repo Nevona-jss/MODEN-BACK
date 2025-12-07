@@ -10,11 +10,8 @@ import com.moden.modenapi.modules.coupon.model.Coupon;
 import com.moden.modenapi.modules.coupon.repository.CouponRepository;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.designer.repository.DesignerDetailRepository;
-import com.moden.modenapi.modules.studio.model.HairStudioDetail;
 import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,12 +33,11 @@ public class CouponService {
     private final DesignerDetailRepository designerDetailRepository;
 
     // ----------------------------------------------------------------------
-    // 1) 일반 쿠폰 생성 (쿠폰 생성 화면에서 /coupons/create 호출)
+    // 1) 일반 쿠폰 생성
     // ----------------------------------------------------------------------
     public CouponResponse createForCurrentUser(UUID userId, CouponCreateRequest req) {
         UUID studioId = resolveStudioIdForUser(userId);
 
-        // 할인값 검증 (rate/amount pair rule 재사용)
         validateDiscountPair(req.discountRate(), req.discountAmount());
 
         LocalDate start = (req.startDate() != null) ? req.startDate() : LocalDate.now();
@@ -63,12 +59,11 @@ public class CouponService {
     }
 
     // ----------------------------------------------------------------------
-// 2) FIRST VISIT 쿠폰 생성 (고객 회원가입 시 자동 발급)
-//    studioId는 항상 CustomerDetail.studioId 기준
-// ----------------------------------------------------------------------
+    // 2) FIRST VISIT 쿠폰 생성 (고객 회원가입 시 자동 발급)
+    // ----------------------------------------------------------------------
+    @Transactional
     public CouponFirstRegisterRes createFirstVisitCouponForCustomer(CustomerDetail customerDetail) {
 
-        // 1) studioId 를 customerDetail 에서 가져오기
         UUID studioId = customerDetail.getStudioId();
         if (studioId == null) {
             throw new ResponseStatusException(
@@ -77,28 +72,20 @@ public class CouponService {
             );
         }
 
-        // 2) FIRST VISIT 전용 기본값 구성
         LocalDate today = LocalDate.now();
 
         CouponCreateFirstRegister req = new CouponCreateFirstRegister(
                 studioId,
-                "💈 First Visit — 10% discount", // name
-                BigDecimal.valueOf(10.0),        // discountRate (10%)
-                null,                            // discountAmount (정율이므로 null)
-                "첫 방문 고객 전용 10% 할인 쿠폰",    // description
-                today,                           // startDate
-                today.plusDays(30)               // expiryDate
+                "💈 First Visit — 10% discount",
+                BigDecimal.valueOf(10.0),
+                null,
+                "첫 방문 고객 전용 10% 할인 쿠폰",
+                today,
+                today.plusDays(30)
         );
 
-        // 3) 공통 빌더 사용해서 Coupon 엔티티 생성
         Coupon coupon = buildCouponForStudio(studioId, req);
 
-        // 필요하면 FIRST VISIT 전용 플래그들 설정 (엔티티에 필드 있을 경우)
-        // coupon.setFirstVisitCoupon(true);
-        // coupon.setBirthdayCoupon(false);
-        // coupon.setGlobal(false);
-
-        // 생성·수정 시각 기본값
         if (coupon.getCreatedAt() == null) {
             coupon.setCreatedAt(Instant.now());
         }
@@ -106,10 +93,8 @@ public class CouponService {
 
         Coupon saved = couponRepository.save(coupon);
 
-        // 4) FirstRegister용 응답 DTO로 매핑
         return toFirstRegisterRes(saved);
     }
-
 
     // ----------------------------------------------------------------------
     // 4) FIRST REGISTER / POLICY 쿠폰 공통 Builder
@@ -135,7 +120,7 @@ public class CouponService {
     }
 
     // ----------------------------------------------------------------------
-    // 5) 할인값 검증 (rate/amount 중 하나만, 최소 0보다 큰 값)
+    // 5) 할인값 검증
     // ----------------------------------------------------------------------
     private void validateDiscountPair(BigDecimal rate, BigDecimal amount) {
         boolean hasRate   = rate   != null && rate.signum() > 0;
@@ -156,7 +141,7 @@ public class CouponService {
     }
 
     // ----------------------------------------------------------------------
-    // 6) 날짜 검증 (end before start 불가)
+    // 6) 날짜 검증
     // ----------------------------------------------------------------------
     private void validateDateRange(LocalDate start, LocalDate end) {
         if (end != null && end.isBefore(start)) {
@@ -168,18 +153,16 @@ public class CouponService {
     }
 
     // ----------------------------------------------------------------------
-    // 7) UPDATE (qisman policy)
+    // 7) UPDATE
     // ----------------------------------------------------------------------
     @Transactional
     public CouponResponse update(UUID id, CouponUpdateRequest req) {
 
-        // 1) Avval DB dan kuponni olib kelamiz (faqat o‘chirilmagan bo‘lsa)
         Coupon entity = couponRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() ->
                         new ResponseStatusException(HttpStatus.NOT_FOUND, "Kupon topilmadi")
                 );
 
-        // 2) Chegirma miqdori bo‘yicha validatsiya
         boolean wantsRateUpdate   = (req.discountRate()   != null);
         boolean wantsAmountUpdate = (req.discountAmount() != null);
 
@@ -190,12 +173,10 @@ public class CouponService {
             );
         }
 
-        // 3) Oddiy field’larni patch qilish (null bo‘lmaganlarini)
         if (req.name() != null) {
             entity.setName(req.name());
         }
 
-        // 4) discountRate yangilanayotgan bo‘lsa
         if (wantsRateUpdate) {
             if (req.discountRate().signum() <= 0) {
                 throw new ResponseStatusException(
@@ -207,7 +188,6 @@ public class CouponService {
             entity.setDiscountAmount(null);
         }
 
-        // 5) discountAmount yangilanayotgan bo‘lsa
         if (wantsAmountUpdate) {
             if (req.discountAmount().signum() <= 0) {
                 throw new ResponseStatusException(
@@ -219,7 +199,6 @@ public class CouponService {
             entity.setDiscountRate(null);
         }
 
-        // 6) Sana, status
         if (req.startDate() != null) {
             entity.setStartDate(req.startDate());
         }
@@ -230,7 +209,6 @@ public class CouponService {
             entity.setStatus(req.status());
         }
 
-        // 7) Sana mantiqiyligini tekshiramiz
         LocalDate start = (entity.getStartDate() != null)
                 ? entity.getStartDate()
                 : LocalDate.now();
@@ -268,7 +246,7 @@ public class CouponService {
     }
 
     // ----------------------------------------------------------------------
-    // 10) LIST BY STUDIO + STATUS (현재 로그인 user → studio 기준)
+    // 10) LIST BY STUDIO + STATUS
     // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<CouponResponse> listByStudioAndStatusForCurrentUser(UUID userId, CouponStatus status) {
@@ -284,7 +262,7 @@ public class CouponService {
     }
 
     // ----------------------------------------------------------------------
-    // 11) LIST FOR CUSTOMER (고객 userId 기준으로 보유 쿠폰 조회)
+    // 11) LIST FOR CUSTOMER (Coupon.userId 기준 설계라면 사용 / 아니면 CustomerCouponService 사용)
     // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<CouponResponse> listForCustomer(UUID customerUserId, CouponStatus status) {
@@ -311,9 +289,6 @@ public class CouponService {
                 );
 
         entity.setDeletedAt(Instant.now());
-        // 필요하면 상태도 같이 변경
-        // entity.setStatus(CouponStatus.EXPIRED);
-
         couponRepository.save(entity);
     }
 
@@ -321,26 +296,20 @@ public class CouponService {
     // 공통: userId → studioId 변환
     // ----------------------------------------------------------------------
     private UUID resolveStudioIdForUser(UUID userId) {
-        // 1) 먼저: 이 userId 로 등록된 스튜디오(owner) 가 있는지 체크
         var studioOpt = hairStudioDetailRepository
                 .findByUserIdAndDeletedAtIsNull(userId)
                 .stream()
                 .findFirst();
 
         if (studioOpt.isPresent()) {
-            // ✅ 비즈니스에서 쓰는 studioId = studio owner 의 userId
-            return userId;
+            return userId;   // studio owner 의 userId
         }
 
-        // 2) 없으면: 디자이너인지 확인
         var designerOpt = designerDetailRepository.findByUserIdAndDeletedAtIsNull(userId);
         if (designerOpt.isPresent()) {
             var dd = designerOpt.get();
-
-            // ✅ 여기서도 dd.getHairStudioId() 는 "스튜디오 userId" 라고 약속
             UUID studioUserId = dd.getHairStudioId();
 
-            // 원하면 검증만 한 번:
             hairStudioDetailRepository.findByUserIdAndDeletedAtIsNull(studioUserId)
                     .orElseThrow(() ->
                             new ResponseStatusException(
@@ -349,16 +318,14 @@ public class CouponService {
                             )
                     );
 
-            return studioUserId;  // ✅ 비즈니스 studioId = studioUserId
+            return studioUserId;
         }
 
-        // 3) 둘 다 아니면 studio profile 없음
         throw new ResponseStatusException(
                 HttpStatus.NOT_FOUND,
                 "Studio profili topilmadi"
         );
     }
-
 
     // ----------------------------------------------------------------------
     // MAPPER

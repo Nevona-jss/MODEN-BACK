@@ -6,6 +6,7 @@ import com.moden.modenapi.common.utils.CurrentUserUtil;
 import com.moden.modenapi.modules.consultation.dto.ConsultationRes;
 import com.moden.modenapi.modules.consultation.service.ConsultationService;
 import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
+import com.moden.modenapi.modules.customer.dto.CustomerSignUpRes;
 import com.moden.modenapi.modules.customer.service.CustomerService;
 import com.moden.modenapi.modules.designer.dto.*;
 import com.moden.modenapi.modules.designer.service.DesignerService;
@@ -14,6 +15,7 @@ import com.moden.modenapi.modules.reservation.service.ReservationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
@@ -35,20 +37,6 @@ public class DesignerController {
     private final CustomerService customerService;
     private final ReservationService reservationService;
     private final ConsultationService consultationService;
-
-    // ----------------------------------------------------------------------
-    // CUSTOMER register
-    // ----------------------------------------------------------------------
-    @PreAuthorize("hasRole('DESIGNER')")
-    @PostMapping("/customers/register")
-    public ResponseEntity<ResponseMessage<Void>> registerCustomer(@RequestBody CustomerSignUpRequest req) {
-        customerService.customerRegister(req, "default123!");
-        return ResponseEntity.ok(ResponseMessage.<Void>builder()
-                .success(true)
-                .message("Customer registered (studio/designer auto-assigned).")
-                .build());
-    }
-
 
 
     // ----------------------------------------------------------------------

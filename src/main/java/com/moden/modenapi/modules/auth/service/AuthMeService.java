@@ -4,7 +4,6 @@ import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.modules.auth.dto.UserMeFullResponse;
 import com.moden.modenapi.modules.auth.model.User;
 import com.moden.modenapi.modules.auth.repository.UserRepository;
-import com.moden.modenapi.modules.customer.dto.CustomerResponse;
 import com.moden.modenapi.modules.customer.dto.CustomerResponseForMe;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.repository.CustomerDetailRepository;
@@ -25,6 +24,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -63,8 +63,10 @@ public class AuthMeService {
                         s.getNaverUrl(),
                         s.getKakaoUrl(),
                         s.getLatitude(),
-                        s.getLongitude()
-                );
+                        s.getLongitude(),
+                        owner != null ? owner.getRole() : null
+
+                        );
             }
             case "DESIGNER" -> {
                 var d = base.designer;
@@ -76,10 +78,12 @@ public class AuthMeService {
 
                 return new DesignerResponse(
                         u != null ? u.getId()   : null,
+                        d.getHairStudioId(),           // position
                         d.getIdForLogin(),         // idForLogin
                         fullName,                  // fullName
                         phone,                     // phone
-                        d.getPosition(),           // position
+                        d.getPosition(),
+                        u != null ? String.valueOf(u.getRole()) : null,
                         d.getStatus(),             // status
                         d.getDaysOff(),            // daysOff
                         Collections.emptyList()   // portfolio (bu yerda portfolioni yuklamaymiz)
@@ -147,11 +151,18 @@ public class AuthMeService {
                     var lastRes = latestList.get(0);
                     lastVisitDate = lastRes.getReservationDate();
 
-                    var svcOpt = studioServiceRepository.findById(lastRes.getServiceId());
-                    if (svcOpt.isPresent()) {
-                        lastServiceName = svcOpt.get().getServiceName();
+                    // 🔥 Reservation 에는 이제 List<UUID> serviceIds 가 있음
+                    var serviceIds = lastRes.getServiceIds();
+                    if (serviceIds != null && !serviceIds.isEmpty()) {
+                        UUID mainServiceId = serviceIds.get(0);   // 대표 서비스 하나만 사용
+
+                        var svcOpt = studioServiceRepository.findById(mainServiceId);
+                        if (svcOpt.isPresent()) {
+                            lastServiceName = svcOpt.get().getServiceName();
+                        }
                     }
                 }
+
 
                 return new CustomerResponseForMe(
                         c.getId(),

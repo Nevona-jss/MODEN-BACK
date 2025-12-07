@@ -98,8 +98,10 @@ public class HairStudioService extends BaseService<HairStudioDetail> {
                 s.getNaverUrl(),
                 s.getKakaoUrl(),
                 s.getLatitude(),
-                s.getLongitude()
-        );
+                s.getLongitude(),
+                owner != null ? owner.getRole()    : null
+
+                );
     }
 
     public UUID getCurrentUserId() {

@@ -12,6 +12,8 @@ import com.moden.modenapi.modules.coupon.dto.CouponResponse;
 import com.moden.modenapi.modules.coupon.service.CouponService;
 import com.moden.modenapi.modules.customer.dto.CustomerListPageRes;
 import com.moden.modenapi.modules.customer.dto.CustomerProfileUpdateReq;
+import com.moden.modenapi.modules.customer.dto.CustomerSignUpRequest;
+import com.moden.modenapi.modules.customer.dto.CustomerSignUpRes;
 import com.moden.modenapi.modules.customer.model.CustomerDetail;
 import com.moden.modenapi.modules.customer.service.CustomerService;
 import com.moden.modenapi.modules.designer.dto.DesignerCreateDto;
@@ -20,7 +22,7 @@ import com.moden.modenapi.modules.designer.dto.DesignerUpdateReq;
 import com.moden.modenapi.modules.designer.service.DesignerService;
 import com.moden.modenapi.modules.point.dto.PointCustomerRes;
 import com.moden.modenapi.modules.point.service.PointService;
-import com.moden.modenapi.modules.reservation.dto.ReservationResponse;
+import com.moden.modenapi.modules.reservation.dto.ReservationPageRes;
 import com.moden.modenapi.modules.reservation.service.ReservationService;
 import com.moden.modenapi.modules.studio.dto.StudioBirthdayCouponRequest;
 import com.moden.modenapi.modules.studio.dto.StudioPrivacyPolicyRequest;
@@ -57,7 +59,21 @@ public class StudioAdminController {
     private final CouponService couponService;
     private final PointService pointService;
 
+    @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
+    @PostMapping("/customers/register")
+    public ResponseEntity<ResponseMessage<CustomerSignUpRes>> registerCustomer(
+            @RequestBody @Valid CustomerSignUpRequest req
+    ) {
+        CustomerSignUpRes res = customerService.customerRegister(req);
 
+        return ResponseEntity.ok(
+                ResponseMessage.<CustomerSignUpRes>builder()
+                        .success(true)
+                        .message("Customer registered (studio/designer assigned).")
+                        .data(res)
+                        .build()
+        );
+    }
     /**
      * 1) Hozir login bo'lgan studio owner uchun
      * tug'ilgan kun kupon setting update
@@ -264,7 +280,7 @@ public class StudioAdminController {
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Reservation list (filter + pagination)")
     @GetMapping("/reservation/list")
-    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listDynamic(
+    public ResponseEntity<ResponseMessage<ReservationPageRes>> listDynamic(
             @RequestParam(required = false) UUID designerId,
             @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) UUID serviceId,

@@ -2,7 +2,6 @@ package com.moden.modenapi.modules.consultation.controller;
 
 import com.moden.modenapi.common.enums.ConsultationStatus;
 import com.moden.modenapi.common.response.ResponseMessage;
-import com.moden.modenapi.common.service.FileStorageService;
 import com.moden.modenapi.modules.consultation.dto.ConsultationRes;
 import com.moden.modenapi.modules.consultation.dto.ConsultationUpdateReq;
 import com.moden.modenapi.modules.consultation.service.ConsultationService;
@@ -14,7 +13,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -55,7 +53,7 @@ public class ConsultationController {
     }
 
     // ----------------------------------------
-    //  상담 수정 (이미지 업로드 + 디자이너 배정 가능)
+    //  상담 수정 (이미지 URL + 메모 수정, 디자이너 배정)
     // ----------------------------------------
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(
@@ -87,7 +85,7 @@ public class ConsultationController {
                 - status      : PENDING / COMPLETED ...
                 - designerId  : 상담 담당 디자이너 ID (consultation.designer_id)
                 - customerId  : 예약 고객 ID
-                - serviceId   : 시술(서비스) ID
+                - serviceId   : 시술(서비스) ID (reservation.service_ids 중 하나)
                 - fromDate/toDate : 예약일 기준 날짜 범위 (YYYY-MM-DD)
                 아무 파라미터도 안 주면 전체 상담(soft delete 제외)을 반환합니다.
                 """

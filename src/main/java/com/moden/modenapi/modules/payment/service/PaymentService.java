@@ -13,13 +13,19 @@ import com.moden.modenapi.modules.payment.model.Payment;
 import com.moden.modenapi.modules.payment.repository.PaymentRepository;
 import com.moden.modenapi.modules.point.model.Point;
 import com.moden.modenapi.modules.point.repository.PointRepository;
+import com.moden.modenapi.modules.product.model.StudioProduct;
+import com.moden.modenapi.modules.product.repository.StudioProductRepository;
 import com.moden.modenapi.modules.reservation.model.Reservation;
 import com.moden.modenapi.modules.reservation.repository.ReservationRepository;
+import com.moden.modenapi.modules.studio.model.HairStudioDetail;
+import com.moden.modenapi.modules.studio.repository.HairStudioDetailRepository;
 import com.moden.modenapi.modules.studioservice.model.StudioService;
 import com.moden.modenapi.modules.studioservice.repository.StudioServiceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -33,6 +39,9 @@ import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static com.moden.modenapi.common.utils.CurrentUserUtil.currentUserId;
+import static org.springframework.security.authorization.AuthorityAuthorizationManager.hasRole;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -44,6 +53,10 @@ public class PaymentService extends BaseService<Payment> {
     private final PointRepository pointRepository;
     private final CouponRepository couponRepository;
     private final CustomerCouponRepository customerCouponRepository;
+    private final StudioProductRepository studioProductRepository;
+    private final HairStudioDetailRepository studioDetailRepository;
+
+
 
     @Override
     protected JpaRepository<Payment, UUID> getRepository() {
@@ -53,23 +66,46 @@ public class PaymentService extends BaseService<Payment> {
     // ------------------------------ //
     // 1) 예약 생성 시 UNPAID Payment 생성
     // ------------------------------ //
-    public void createUnpaidPaymentForReservation(Reservation reservation) {
 
-        StudioService studioService = studioServiceRepository.findById(reservation.getServiceId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 서비스 정보를 찾을 수 없습니다. serviceId=" + reservation.getServiceId()
-                ));
+    /**
+     * Reservation 생성 직후, UNPAID(PENDING) Payment 생성.
+     * totalAmount 파라미터는 현재는 참고용(double),
+     * 실제 서비스 가격은 reservation.serviceIds 기반으로 다시 계산.
+     */
+    public void createUnpaidPaymentForReservation(Reservation reservation, double totalAmount) {
 
-        BigDecimal servicePrice = studioService.getServicePrice();
+        List<UUID> serviceIds = reservation.getServiceIds();
+        if (serviceIds == null || serviceIds.isEmpty()) {
+            // 서비스가 전혀 없는 예약이라면 넘어온 totalAmount 로만 생성
+            BigDecimal serviceTotal = BigDecimal.valueOf(totalAmount);
+
+            Payment payment = Payment.builder()
+                    .reservationId(reservation.getId())
+                    .paymentStatus(PaymentStatus.PENDING)
+                    .serviceTotal(serviceTotal)
+                    .productTotal(BigDecimal.ZERO)
+                    .pointsUsed(BigDecimal.ZERO)
+                    .totalAmount(serviceTotal)
+                    .build();
+
+            paymentRepository.save(payment);
+            return;
+        }
+
+        // 여러 서비스 가격 합산
+        List<StudioService> services = studioServiceRepository.findAllById(serviceIds);
+        BigDecimal serviceTotal = services.stream()
+                .map(StudioService::getServicePrice)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Payment payment = Payment.builder()
                 .reservationId(reservation.getId())
                 .paymentStatus(PaymentStatus.PENDING)
-                .serviceTotal(servicePrice)
+                .serviceTotal(serviceTotal)
                 .productTotal(BigDecimal.ZERO)
                 .pointsUsed(BigDecimal.ZERO)
-                .totalAmount(servicePrice) // 처음엔 서비스 금액 그대로
+                .totalAmount(serviceTotal) // 초기 totalAmount = 서비스 합계
                 .build();
 
         paymentRepository.save(payment);
@@ -78,6 +114,7 @@ public class PaymentService extends BaseService<Payment> {
     // ------------------------------ //
     // 2) 예약 기준 결제 조회 (payment detail)
     // ------------------------------ //
+
     @Transactional(readOnly = true)
     public PaymentRes getByReservation(UUID reservationId) {
         Payment payment = paymentRepository.findByReservationId(reservationId)
@@ -91,32 +128,103 @@ public class PaymentService extends BaseService<Payment> {
     // ------------------------------ //
     // 3) 결제 확정 (포인트 + 쿠폰 + Tip 계산)
     // ------------------------------ //
-    public PaymentRes confirmPayment(PaymentCreateReq req) {
 
-        // 3-1) 예약 조회
-        Reservation reservation = reservationRepository.findById(req.reservationId())
+// PaymentService 내부
+
+    // 추가 필드 필요
+
+    public PaymentRes confirmPayment(UUID paymentId, PaymentCreateReq req) {
+
+        // 1) Payment (UNPAID) 조회
+        Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "해당 예약을 찾을 수 없습니다. reservationId=" + req.reservationId()
+                        "해당 결제 정보를 찾을 수 없습니다. paymentId=" + paymentId
                 ));
 
-        // customerId (포인트/쿠폰 검증 용도)
+        // 2) 예약 조회
+        UUID reservationId = payment.getReservationId();
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "해당 예약을 찾을 수 없습니다. reservationId=" + reservationId
+                ));
+
         UUID customerId = reservation.getCustomerId();
 
-        // 3-2) 서비스 금액 조회
-        StudioService studioService = studioServiceRepository.findById(reservation.getServiceId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "해당 서비스 정보를 찾을 수 없습니다. serviceId=" + reservation.getServiceId()
-                ));
+        // 3) 서비스 금액 조회 (여러 서비스)
+        List<UUID> serviceIds = reservation.getServiceIds();
+        if (serviceIds == null || serviceIds.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "예약에 연결된 서비스가 없습니다."
+            );
+        }
 
-        BigDecimal servicePrice = defaultZero(studioService.getServicePrice());
-        BigDecimal productTotal = defaultZero(req.productTotal());
+        List<StudioService> services = studioServiceRepository.findAllById(serviceIds);
+        if (services.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "예약에 연결된 서비스를 찾을 수 없습니다."
+            );
+        }
+
+        BigDecimal servicePrice = services.stream()
+                .map(StudioService::getServicePrice)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 3-B) 상품 목록 기반 productTotal / productTip 계산
+        List<PaymentProductLineReq> productLines =
+                Optional.ofNullable(req.products()).orElse(List.of());
+
+        BigDecimal productTotal = BigDecimal.ZERO;
+        BigDecimal productTip   = BigDecimal.ZERO;
+        List<UUID> productIdsForPayment = new ArrayList<>();
+
+        if (!productLines.isEmpty()) {
+            List<UUID> productIds = productLines.stream()
+                    .map(PaymentProductLineReq::productId)
+                    .toList();
+
+            List<StudioProduct> products = studioProductRepository.findAllById(productIds);
+            Map<UUID, StudioProduct> productMap = products.stream()
+                    .collect(Collectors.toMap(StudioProduct::getId, p -> p));
+
+            for (PaymentProductLineReq line : productLines) {
+                StudioProduct product = productMap.get(line.productId());
+                if (product == null) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "존재하지 않는 상품이 있습니다. productId=" + line.productId()
+                    );
+                }
+
+                int qtyInt = line.quantity() == null ? 0 : line.quantity();
+                if (qtyInt <= 0) continue;
+
+                productIdsForPayment.add(line.productId());
+
+                BigDecimal qty   = BigDecimal.valueOf(qtyInt);
+                BigDecimal price = defaultZero(product.getPrice());
+                BigDecimal lineTotal = price.multiply(qty);
+
+                productTotal = productTotal.add(lineTotal);
+
+                BigDecimal tipPercent = defaultZero(product.getDesignerTipPercent());
+                if (tipPercent.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal lineTip = lineTotal
+                            .multiply(tipPercent)
+                            .divide(BigDecimal.valueOf(100), 0, RoundingMode.FLOOR);
+                    productTip = productTip.add(lineTip);
+                }
+            }
+        }
 
         // 서비스 + 제품 = 기본 합계
         BigDecimal subTotal = servicePrice.add(productTotal);
 
-        // 3-3) 현재 활성 포인트 계산
+        // 4) 현재 활성 포인트 계산
         BigDecimal activePoint = calcActivePoint(customerId);
         BigDecimal pointsToUse = defaultZero(req.pointsToUse());
 
@@ -126,7 +234,6 @@ public class PaymentService extends BaseService<Payment> {
                     "사용 포인트는 음수가 될 수 없습니다."
             );
         }
-
         if (pointsToUse.compareTo(activePoint) > 0) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -140,7 +247,7 @@ public class PaymentService extends BaseService<Payment> {
             afterPoint = BigDecimal.ZERO;
         }
 
-        // 3-4) 쿠폰 할인 계산
+        // 5) 쿠폰 할인 계산 (service + product 기준)
         BigDecimal couponDiscount = BigDecimal.ZERO;
         UUID couponId = req.couponId();
 
@@ -151,43 +258,44 @@ public class PaymentService extends BaseService<Payment> {
                             "해당 쿠폰을 찾을 수 없습니다. couponId=" + couponId
                     ));
 
-            // 쿠폰 유효성 체크 (상태 + 날짜)
             validateCouponForCustomer(coupon, customerId);
 
-            BigDecimal base = afterPoint; // 포인트 적용 후 금액 기준
+            // 기준: 서비스 + 제품 (포인트 적용 전)
+            BigDecimal base = subTotal;
             couponDiscount = computeCouponDiscount(base, coupon);
 
-            // 쿠폰 상태 변경 (USED)
             coupon.setStatus(CouponStatus.USED);
             coupon.setUsedDate(LocalDate.now(ZoneId.of("Asia/Tashkent")));
             couponRepository.save(coupon);
         }
 
-        // 3-5) 최종 지불 금액
+        // 6) 최종 지불 금액
         BigDecimal finalAmount = afterPoint.subtract(couponDiscount);
         if (finalAmount.compareTo(BigDecimal.ZERO) < 0) {
             finalAmount = BigDecimal.ZERO;
         }
 
-        // 3-6) 디자이너 Tip 계산 (service + product 기준)
-        BigDecimal tipPercent = defaultZero(studioService.getDesignerTipPercent());
-        // Tip = (서비스 + 제품) * tipPercent / 100
-        BigDecimal tipBase = servicePrice.add(productTotal);
-        if (tipBase.compareTo(BigDecimal.ZERO) < 0) {
-            tipBase = BigDecimal.ZERO;
-        }
+        // 7-A) 서비스 Tip
+        BigDecimal serviceTip = services.stream()
+                .map(s -> {
+                    BigDecimal price   = defaultZero(s.getServicePrice());
+                    BigDecimal percent = defaultZero(s.getDesignerTipPercent());
 
-        BigDecimal designerTip = tipBase
-                .multiply(tipPercent)
-                .divide(BigDecimal.valueOf(100), 0, RoundingMode.FLOOR);
+                    if (price.compareTo(BigDecimal.ZERO) <= 0 ||
+                            percent.compareTo(BigDecimal.ZERO) <= 0) {
+                        return BigDecimal.ZERO;
+                    }
 
-        // 3-7) Payment 엔티티 가져오기 (없으면 생성 → UPDATE 형태로 사용)
-        Payment payment = paymentRepository.findByReservationId(req.reservationId())
-                .orElseGet(() -> Payment.builder()
-                        .reservationId(reservation.getId())
-                        .build()
-                );
+                    return price
+                            .multiply(percent)
+                            .divide(BigDecimal.valueOf(100), 0, RoundingMode.FLOOR);
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        // 7-B) 최종 디자이너 Tip = 서비스 Tip + 상품 Tip
+        BigDecimal designerTip = serviceTip.add(productTip);
+
+        // 8) Payment 갱신
         payment.setServiceTotal(servicePrice);
         payment.setProductTotal(productTotal);
         payment.setPointsUsed(pointsToUse);
@@ -195,11 +303,12 @@ public class PaymentService extends BaseService<Payment> {
         payment.setPaymentMethod(req.paymentMethod());
         payment.setPaymentStatus(PaymentStatus.PAID);
         payment.setCouponId(couponId);
-        payment.setDesignerTipAmount(designerTip);   // ✅ Tip 저장
+        payment.setDesignerTipAmount(designerTip);
+        payment.setProductIds(productIdsForPayment);
 
         Payment saved = paymentRepository.save(payment);
 
-        // 3-8) 포인트 USE 기록 남기기
+        // 9) 포인트 USE 기록
         if (pointsToUse.compareTo(BigDecimal.ZERO) > 0) {
             Point usePoint = Point.builder()
                     .userId(customerId)
@@ -212,6 +321,27 @@ public class PaymentService extends BaseService<Payment> {
         }
 
         return toDto(saved);
+    }
+    private BigDecimal calcCouponDiscountFromPayment(Payment p) {
+        UUID couponId = p.getCouponId();
+        if (couponId == null) {
+            return BigDecimal.ZERO;
+        }
+
+        Coupon coupon = couponRepository.findById(couponId).orElse(null);
+        if (coupon == null) {
+            return BigDecimal.ZERO;
+        }
+
+        // ✅ 기준: 서비스 + 제품 (포인트는 빼지 않음)
+        BigDecimal base = defaultZero(p.getServiceTotal())
+                .add(defaultZero(p.getProductTotal()));
+
+        if (base.compareTo(BigDecimal.ZERO) < 0) {
+            base = BigDecimal.ZERO;
+        }
+
+        return computeCouponDiscount(base, coupon);
     }
 
     // ------------------------------ //
@@ -243,7 +373,6 @@ public class PaymentService extends BaseService<Payment> {
      * 쿠폰이 "사용 가능한 상태인지" 간단히 검증
      *  - 상태: AVAILABLE
      *  - 날짜: startDate ~ expiryDate 범위
-     *  - customerId 는 현재는 비즈니스 제약에 사용하지 않고, 향후 확장 여지로 둠
      */
     private void validateCouponForCustomer(Coupon coupon, UUID customerId) {
 
@@ -268,11 +397,8 @@ public class PaymentService extends BaseService<Payment> {
                     "이미 만료된 쿠폰입니다."
             );
         }
-
-        // TODO: 필요하면 customerId 기반 추가 제약 (특정 고객만 사용 가능 등)을 여기서 확장
     }
 
-    // cc: CustomerCoupon, coupon: Coupon, customerId: 현재 로그인 고객 ID
     private void validateCustomerCanUseCoupon(CustomerCoupon cc, Coupon coupon, UUID customerId) {
         // 1) 이 쿠폰 소유 고객인지 확인
         if (!cc.getCustomerId().equals(customerId)) {
@@ -282,7 +408,7 @@ public class PaymentService extends BaseService<Payment> {
             );
         }
 
-        // 2) studio 일치 확인 (쿠폰 정책과 발급된 쿠폰이 같은 헤어샵인지)
+        // 2) studio 일치 확인
         if (!coupon.getStudioId().equals(cc.getStudioId())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -298,7 +424,7 @@ public class PaymentService extends BaseService<Payment> {
             );
         }
 
-        // 4) 날짜 유효성 (오늘 기준 사용 가능 기간인지)
+        // 4) 날짜 유효성
         var today = LocalDate.now(ZoneId.of("Asia/Tashkent"));
 
         if (coupon.getStartDate() != null && coupon.getStartDate().isAfter(today)) {
@@ -324,7 +450,6 @@ public class PaymentService extends BaseService<Payment> {
 
         validateCustomerCanUseCoupon(cc, coupon, currentCustomerId);
 
-        // 이후 실제 사용 처리 (상태 변경, usedDate 세팅 등)
         coupon.setStatus(CouponStatus.USED);
         coupon.setUsedDate(LocalDate.now(ZoneId.of("Asia/Tashkent")));
         couponRepository.save(coupon);
@@ -385,33 +510,10 @@ public class PaymentService extends BaseService<Payment> {
         );
     }
 
-    /** couponId, rate, amount 기반으로 할인 금액 재계산 */
-    private BigDecimal calcCouponDiscountFromPayment(Payment p) {
-        UUID couponId = p.getCouponId();
-        if (couponId == null) {
-            return BigDecimal.ZERO;
-        }
-
-        Coupon coupon = couponRepository.findById(couponId).orElse(null);
-        if (coupon == null) {
-            return BigDecimal.ZERO;
-        }
-
-        // "서비스 + 제품 - 포인트" 기준으로 다시 계산
-        BigDecimal base = defaultZero(p.getServiceTotal())
-                .add(defaultZero(p.getProductTotal()))
-                .subtract(defaultZero(p.getPointsUsed()));
-
-        if (base.compareTo(BigDecimal.ZERO) < 0) {
-            base = BigDecimal.ZERO;
-        }
-
-        return computeCouponDiscount(base, coupon);
-    }
-
     // ------------------------------
-    // Payment list / summary 부분 (기존 코드 정리)
+    // Payment list / summary 부분
     // ------------------------------
+
     @Transactional(readOnly = true)
     public List<PaymentRes> searchPaymentsForList(
             UUID studioId,
@@ -427,12 +529,13 @@ public class PaymentService extends BaseService<Payment> {
         List<Payment> list = paymentRepository.searchPayments(
                 studioId,
                 designerId,
-                serviceName,
                 status,
                 fromDate,
                 toDate
         );
 
+        // 단순 DTO 변환 (serviceName 필터는 여기서도 in-memory로 가능하지만
+        // 지금은 getStudioPaymentList / getDesignerPaymentList 에서 처리)
         return list.stream()
                 .map(this::toDto)
                 .toList();
@@ -451,7 +554,6 @@ public class PaymentService extends BaseService<Payment> {
         List<Payment> payments = paymentRepository.searchPayments(
                 studioId,
                 designerId,
-                null,
                 PaymentStatus.PAID,
                 fromDate,
                 toDate
@@ -481,16 +583,16 @@ public class PaymentService extends BaseService<Payment> {
     }
 
     @Transactional(readOnly = true)
-    public TodaySalesSummaryRes getTodaySummary(UUID studioId) {
+    public TodaySalesSummaryRes getTodaySummary(UUID userId) {
 
         LocalDate today = LocalDate.now();
         ZoneId zone = ZoneId.systemDefault();
 
         Instant start = today.atStartOfDay(zone).toInstant();
-        Instant end = today.plusDays(1).atStartOfDay(zone).toInstant();
+        Instant end   = today.plusDays(1).atStartOfDay(zone).toInstant();
 
         List<Object[]> rows = paymentRepository.aggregateSalesForPeriod(
-                studioId,
+                userId,
                 PaymentStatus.PAID,
                 start,
                 end
@@ -519,6 +621,7 @@ public class PaymentService extends BaseService<Payment> {
                 averageAmount
         );
     }
+
 
     private BigDecimal toBigDecimal(Object value) {
         if (value == null) {
@@ -551,28 +654,35 @@ public class PaymentService extends BaseService<Payment> {
     }
 
     @Transactional(readOnly = true)
-    public List<PaymentListItemRes> getStudioPaymentList(
+    public PaymentListPageRes getStudioPaymentList(
             UUID studioId,
             UUID designerId,
             String serviceName,
             LocalDateTime from,
             LocalDateTime to,
             PaymentStatus status,
-            int page,
+            int page,   // 0-based로 들어온다고 가정 (page=0이면 첫 페이지)
             int size
     ) {
-        LocalDate fromDate = (from != null) ? from.toLocalDate() : null;
-        LocalDate toDate   = (to != null)   ? to.toLocalDate()   : null;
+        // ---- 1) page / size 보정 ----
+        int safeSize   = (size <= 0) ? 10 : size;
+        int pageIndex  = (page < 0) ? 0 : page;   // 0-based index
+        int pageNumber = pageIndex + 1;           // 응답에는 1-based 로 내려줌
 
+        // ---- 2) LocalDate 로 변환 ----
+        LocalDate fromDate = (from != null) ? from.toLocalDate() : null;
+        LocalDate toDate   = (to   != null) ? to.toLocalDate()   : null;
+
+        // ---- 3) DB 검색 ----
         List<Payment> payments = paymentRepository.searchPayments(
                 studioId,
                 designerId,
-                serviceName,
                 status,
                 fromDate,
                 toDate
         );
 
+        // ---- 4) Payment + Reservation → DTO 매핑 ----
         List<PaymentListItemRes> all = payments.stream()
                 .map(p -> {
                     Reservation r = reservationRepository.findById(p.getReservationId())
@@ -581,18 +691,136 @@ public class PaymentService extends BaseService<Payment> {
                                     "Payment에 연결된 예약을 찾을 수 없습니다. paymentId=" + p.getId()
                             ));
 
-                    StudioService s = studioServiceRepository.findById(r.getServiceId())
-                            .orElseThrow(() -> new ResponseStatusException(
-                                    HttpStatus.NOT_FOUND,
-                                    "해당 서비스 정보를 찾을 수 없습니다. serviceId=" + r.getServiceId()
-                            ));
-
-                    return toListItemDto(p, r, s);
+                    String serviceNames = buildServiceNames(r);
+                    return toListItemDto(p, r, serviceNames);
                 })
                 .toList();
 
-        return paginate(all, page, size);
+        // ---- 5) serviceName in-memory filter ----
+        if (serviceName != null && !serviceName.isBlank()) {
+            String keyword = serviceName.trim();
+            all = all.stream()
+                    .filter(item -> item.serviceName() != null
+                            && item.serviceName().contains(keyword))
+                    .toList();
+        }
+
+        // ---- 6) 전체 개수 ----
+        long totalCount = all.size();
+
+        // ---- 7) 인메모리 pagination ----
+        List<PaymentListItemRes> pageItems = paginate(all, pageIndex, safeSize);
+
+        // ---- 8) Page DTO 로 감싸서 리턴 ----
+        return new PaymentListPageRes(
+                totalCount,
+                safeSize,
+                pageNumber,
+                pageItems
+        );
     }
+
+    /**
+     * 0-based pageIndex, size 개수만큼 잘라주는 인메모리 pagination 헬퍼
+     */
+    private <T> List<T> paginate(List<T> list, int pageIndex, int size) {
+        if (list == null || list.isEmpty()) {
+            return List.of();
+        }
+        if (size <= 0) size = 10;
+        if (pageIndex < 0) pageIndex = 0;
+
+        int fromIndex = pageIndex * size;
+        if (fromIndex >= list.size()) {
+            return List.of();
+        }
+
+        int toIndex = Math.min(fromIndex + size, list.size());
+        return list.subList(fromIndex, toIndex);
+    }
+
+
+    @Transactional(readOnly = true)
+    public TodaySalesSummaryRes getTodaySummaryForCurrentUser(UUID userId) {
+
+
+        LocalDate today = LocalDate.now();
+        ZoneId zone = ZoneId.systemDefault();
+
+        Instant start = today.atStartOfDay(zone).toInstant();
+        Instant end   = today.plusDays(1).atStartOfDay(zone).toInstant();
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        boolean isStudioOwner = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_HAIR_STUDIO"));
+        boolean isDesigner = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_DESIGNER"));
+
+        UUID keyId;
+
+        if (isStudioOwner) {
+            // 1) userId = studio owner userId deb qabul qilamiz
+            // ownerUserId bo‘yicha studio entitini topamiz
+            HairStudioDetail studio = studioDetailRepository
+                    .findByOwnerUserId(userId)
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.FORBIDDEN,
+                            "Studio not found for current owner"
+                    ));
+
+            // ⚠ MUHIM:
+            // Reservation.studioId ga aynan nima saqlaganingga qarab tanlaysan:
+            // Agar studioId = HairStudioDetail.id bo‘lsa:
+            //   keyId = studio.getId();
+            // Agar studioId = ownerUserId bo‘lsa:
+            //   keyId = userId;
+
+            keyId = studio.getUserId();   // yoki keyId = userId; (schema'ingga moslab tanla)
+
+        } else if (isDesigner) {
+            // Designer bo‘lsa, Reservation.designerId = designer userId deb qabul qilamiz
+            keyId = userId;
+        } else {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "오늘 매출 요약은 스튜디오 또는 디자이너만 조회할 수 있습니다."
+            );
+        }
+
+
+        List<Object[]> rows = paymentRepository.aggregateSalesForPeriod(
+                keyId,
+                PaymentStatus.PAID,
+                start,
+                end
+        );
+
+        Object[] row;
+        if (rows == null || rows.isEmpty()) {
+            row = new Object[]{null, 0L, null};
+        } else {
+            row = rows.get(0);
+        }
+
+        BigDecimal totalSales = toBigDecimal(row[0]);
+        long paymentCount = (row[1] == null) ? 0L : ((Number) row[1]).longValue();
+
+        BigDecimal averageAmount = BigDecimal.ZERO;
+        if (paymentCount > 0) {
+            averageAmount = toBigDecimal(row[2]).setScale(0, RoundingMode.HALF_UP);
+        }
+
+        return new TodaySalesSummaryRes(
+                today,
+                totalSales,
+                paymentCount,
+                averageAmount
+        );
+    }
+
+
+
 
     @Transactional(readOnly = true)
     public List<PaymentListItemRes> getDesignerPaymentList(
@@ -610,7 +838,6 @@ public class PaymentService extends BaseService<Payment> {
         List<Payment> payments = paymentRepository.searchPayments(
                 null,
                 designerId,
-                serviceName,
                 status,
                 fromDate,
                 toDate
@@ -624,40 +851,47 @@ public class PaymentService extends BaseService<Payment> {
                                     "Payment에 연결된 예약을 찾을 수 없습니다. paymentId=" + p.getId()
                             ));
 
-                    StudioService s = studioServiceRepository.findById(r.getServiceId())
-                            .orElseThrow(() -> new ResponseStatusException(
-                                    HttpStatus.NOT_FOUND,
-                                    "해당 서비스 정보를 찾을 수 없습니다. serviceId=" + r.getServiceId()
-                            ));
+                    String serviceNames = buildServiceNames(r);
 
-                    return toListItemDto(p, r, s);
+                    return toListItemDto(p, r, serviceNames);
                 })
                 .toList();
+
+        if (serviceName != null && !serviceName.isBlank()) {
+            String keyword = serviceName.trim();
+            all = all.stream()
+                    .filter(item -> item.serviceName() != null
+                            && item.serviceName().contains(keyword))
+                    .toList();
+        }
 
         return paginate(all, page, size);
     }
 
-    private List<PaymentListItemRes> paginate(List<PaymentListItemRes> list, int page, int size) {
-        if (page < 0) page = 0;
-        if (size <= 0) size = 10;
-        if (size > 10) size = 10;
-
-        int fromIndex = page * size;
-        if (fromIndex >= list.size()) {
-            return List.of();
+    /**
+     * 예약에 연결된 serviceIds 기준으로 서비스 이름들을 ", " 로 join
+     */
+    private String buildServiceNames(Reservation r) {
+        List<UUID> serviceIds = r.getServiceIds();
+        if (serviceIds == null || serviceIds.isEmpty()) {
+            return "";
         }
 
-        int toIndex = Math.min(fromIndex + size, list.size());
-        return list.subList(fromIndex, toIndex);
+        List<StudioService> services = studioServiceRepository.findAllById(serviceIds);
+
+        return services.stream()
+                .map(StudioService::getServiceName)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(", "));
     }
 
-    private PaymentListItemRes toListItemDto(Payment p, Reservation r, StudioService s) {
+
+    private PaymentListItemRes toListItemDto(Payment p, Reservation r, String serviceNames) {
 
         String customerFullName = null;
         String designerFullName = null;
 
         Instant consultCompletedAt = null;
-        // 필요하면 reservation의 일시 필드 매핑
 
         return new PaymentListItemRes(
                 p.getId(),
@@ -665,7 +899,7 @@ public class PaymentService extends BaseService<Payment> {
                 consultCompletedAt,
                 customerFullName,
                 designerFullName,
-                s.getServiceName(),
+                serviceNames,
                 p.getTotalAmount(),
                 p.getPaymentStatus(),
                 p.getDesignerTipAmount()

@@ -23,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -141,7 +142,8 @@ public class AdminService {
                 studio.getNaverUrl(),
                 studio.getKakaoUrl(),
                 studio.getLatitude(),
-                studio.getLongitude()
+                studio.getLongitude(),
+                owner.getRole()
         );
     }
 
@@ -194,7 +196,7 @@ public class AdminService {
                 s.getIdForLogin(), s.getBusinessNo(), s.getOwnerName(), s.getStudioPhone(),
                 s.getAddress(), s.getDescription(),  s.getLogoImageUrl(),
                 s.getBannerImageUrl(),  s.getNaverUrl(), s.getKakaoUrl(),
-                s.getLatitude(), s.getLongitude()
+                s.getLatitude(), s.getLongitude(), owner != null ? owner.getRole() : null
         );
     }
 
@@ -213,7 +215,7 @@ public class AdminService {
     }
 
     @Transactional(readOnly = true)
-    public java.util.List<StudioRes> getAllStudios() {
+    public List<StudioRes> getAllStudios() {
         return studioRepository.findAll().stream()
                 .filter(s -> s.getDeletedAt() == null)
                 .map(this::mapToRes)
@@ -253,7 +255,8 @@ public class AdminService {
                 s.getNaverUrl(),
                 s.getKakaoUrl(),
                 s.getLatitude(),
-                s.getLongitude()
+                s.getLongitude(),
+                owner != null ? owner.getRole() : null
         );
     }
 }

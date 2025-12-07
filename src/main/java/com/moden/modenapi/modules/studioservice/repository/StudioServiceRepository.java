@@ -12,4 +12,14 @@ public interface StudioServiceRepository extends BaseRepository<StudioService, U
 
     List<StudioService> findByStudioId(UUID studioId);
 
+    @Query("""
+        select s
+        from StudioService s
+        where s.studioId = :studioId
+          and s.id in :serviceIds
+    """)
+    List<StudioService> findAllByStudioAndIds(
+            @Param("studioId") UUID studioId,
+            @Param("serviceIds") List<UUID> serviceIds
+    );
 }

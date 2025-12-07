@@ -8,6 +8,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -40,6 +42,17 @@ public class Payment extends BaseEntity {
     @Column(name = "service_total", precision = 12, scale = 2, nullable = false)
     private BigDecimal serviceTotal = BigDecimal.ZERO;
 
+    @ElementCollection
+    @CollectionTable(
+            name = "payment_product_ids",
+            joinColumns = @JoinColumn(
+                    name = "payment_id",
+                    columnDefinition = "uniqueidentifier"
+            )
+    )
+    @Column(name = "product_id", columnDefinition = "uniqueidentifier")
+    private List<UUID> productIds = new ArrayList<>();
+
     // 사용한 제품(샴푸, 트리트먼트 등) 총 금액
     @Column(name = "product_total", precision = 12, scale = 2, nullable = false)
     private BigDecimal productTotal = BigDecimal.ZERO;
@@ -47,6 +60,7 @@ public class Payment extends BaseEntity {
     // 포인트로 사용한 금액
     @Column(name = "points_used", precision = 12, scale = 2, nullable = false)
     private BigDecimal pointsUsed = BigDecimal.ZERO;
+
 
     // 실제로 고객이 지불해야 하는 최종 금액
     @Column(name = "total_amount", precision = 12, scale = 2, nullable = false)

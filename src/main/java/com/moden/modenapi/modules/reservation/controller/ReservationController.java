@@ -2,8 +2,8 @@ package com.moden.modenapi.modules.reservation.controller;
 
 import com.moden.modenapi.common.enums.ReservationStatus;
 import com.moden.modenapi.common.response.ResponseMessage;
-import com.moden.modenapi.common.utils.CurrentUserUtil;
 import com.moden.modenapi.modules.reservation.dto.ReservationCreateRequest;
+import com.moden.modenapi.modules.reservation.dto.ReservationPageRes;
 import com.moden.modenapi.modules.reservation.dto.ReservationResponse;
 import com.moden.modenapi.modules.reservation.dto.ReservationUpdateRequest;
 import com.moden.modenapi.modules.reservation.service.ReservationService;
@@ -35,7 +35,7 @@ public class ReservationController {
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "Reservation list (filter + pagination)")
     @GetMapping("/list")
-    public ResponseEntity<ResponseMessage<List<ReservationResponse>>> listDynamic(
+    public ResponseEntity<ResponseMessage<ReservationPageRes>> listDynamic(
             @RequestParam(required = false) UUID designerId,
             @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) UUID serviceId,
@@ -77,17 +77,13 @@ public class ReservationController {
     public ResponseEntity<ResponseMessage<ReservationResponse>> create(
             @Valid @RequestBody ReservationCreateRequest request
     ) {
-        UUID currentStudioId = CurrentUserUtil.currentUserId();
-
-        var response = reservationService.create(
-                currentStudioId,
-                request
-        );
+        var response = reservationService.createReservation(request);
 
         return ResponseEntity.ok(
                 ResponseMessage.success("예약이 생성되었습니다.", response)
         );
     }
+
 
     // ============================================================
     // 3) GET BY ID
@@ -130,7 +126,7 @@ public class ReservationController {
     // ============================================================
     @PreAuthorize("hasAnyRole('HAIR_STUDIO','DESIGNER')")
     @Operation(summary = "예약 취소 (상태 자동 CANCELED)")
-    @PostMapping("/cancel/{id}")
+    @PatchMapping("/cancel/{id}")
     public ResponseEntity<ResponseMessage<ReservationResponse>> cancel(
             @PathVariable UUID id
     ) {

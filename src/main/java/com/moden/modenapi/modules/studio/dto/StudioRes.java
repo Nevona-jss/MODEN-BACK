@@ -1,5 +1,6 @@
 package com.moden.modenapi.modules.studio.dto;
 
+import com.moden.modenapi.common.enums.Role;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
@@ -33,5 +34,6 @@ public record StudioRes(
         String naver,
         String kakao,
         BigDecimal latitude,
-        BigDecimal longitude
+        BigDecimal longitude,
+        Role role
 ) {}

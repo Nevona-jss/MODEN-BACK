@@ -40,12 +40,13 @@ public class CustomerCouponService {
             String period,
             List<String> serviceNames
     ) {
-        UUID customerId = resolveCustomerIdForUser(userId);
+        UUID customerId = resolveCustomerIdForUser(userId);   // 👉 여기서 userId 그대로 리턴
         return getCouponsForCustomer(customerId, status, period, serviceNames);
     }
 
     // ----------------------------------------------------------------------
     // 2) 특정 customerId 기준 filter (status + period + serviceNames)
+    //    여기서의 customerId = 고객 User.id
     // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<CustomerCouponRes> getCouponsForCustomer(
@@ -54,7 +55,7 @@ public class CustomerCouponService {
             String period,
             List<String> serviceNames
     ) {
-        // 1) customerId bo‘yicha barcha CustomerCoupon
+        // 1) customerId(=userId) bo‘yicha barcha CustomerCoupon
         List<CustomerCoupon> base = customerCouponRepository
                 .findAllByCustomerIdAndDeletedAtIsNullOrderByCreatedAtDesc(customerId);
 
@@ -79,7 +80,7 @@ public class CustomerCouponService {
 
         return base.stream()
                 .filter(cc -> {
-                    // ⏰ period filter: createdAt bo‘yicha
+                    // ⏰ period filter: createdAt 기준
                     if (from != null) {
                         Instant created = cc.getCreatedAt();
                         if (created == null || created.isBefore(from)) {
@@ -87,7 +88,7 @@ public class CustomerCouponService {
                         }
                     }
 
-                    // 🔹 Coupon 로드 (status & name filter uchun)
+                    // 🔹 Coupon 로드 (status & name filter)
                     Coupon coupon = couponRepository
                             .findByIdAndDeletedAtIsNull(cc.getCouponId())
                             .orElse(null);
@@ -116,6 +117,7 @@ public class CustomerCouponService {
 
     // ----------------------------------------------------------------------
     // 3) 특정 customerId 기준, status 만으로 필터 (단순 목록)
+    //    여기서의 customerId = 고객 User.id
     // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<CustomerCouponRes> getCouponsForCustomer(UUID customerId, CouponStatus status) {
@@ -136,20 +138,20 @@ public class CustomerCouponService {
     }
 
     // ----------------------------------------------------------------------
-    // 4) Studio → 특정 customer (userId) kupon list (controller에서 사용)
+    // 4) Studio → 특정 customer (userId) 쿠폰 list (controller에서 사용)
     // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<CustomerCouponRes> listCouponsForCustomerUser(UUID customerUserId) {
-        UUID customerId = resolveCustomerIdForUser(customerUserId);
-        // status = null → hammasi
+        UUID customerId = resolveCustomerIdForUser(customerUserId);  // = userId
         return getCouponsForCustomer(customerId, null);
     }
 
     // ----------------------------------------------------------------------
     // 5) CUSTOMER coupon assign (studio가 고객에게 쿠폰 발급)
+    //    customerId = 고객 User.id
     // ----------------------------------------------------------------------
     @Transactional
-    public void assignToCustomer(UUID studioId, UUID couponId, UUID customerId) {
+    public void assignToCustomer(UUID studioId, UUID couponId, UUID customerUserId) {
 
         // 1) 쿠폰 존재 + soft delete 아님
         Coupon coupon = couponRepository.findByIdAndDeletedAtIsNull(couponId)
@@ -167,10 +169,13 @@ public class CustomerCouponService {
         }
 
         // 3) customer 존재 + studio 매칭 확인
-        CustomerDetail customer = customerDetailRepository.findById(customerId)
+        CustomerDetail customer = customerDetailRepository
+                .findActiveByUserIdOrderByUpdatedDesc(customerUserId, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Customer topilmadi (id=" + customerId + ")"
+                        "Customer topilmadi (userId=" + customerUserId + ")"
                 ));
 
         if (!customer.getStudioId().equals(studioId)) {
@@ -180,9 +185,9 @@ public class CustomerCouponService {
             );
         }
 
-        // 4) 이미 동일 couponId를 가진 CustomerCoupon 이 있는지 (soft delete 아닌 것 기준)
+        // 4) 이미 동일 couponId를 가진 CustomerCoupon 이 있는지
         boolean alreadyHas = customerCouponRepository
-                .existsByCouponIdAndCustomerIdAndDeletedAtIsNull(couponId, customerId);
+                .existsByCouponIdAndCustomerIdAndDeletedAtIsNull(couponId, customerUserId);
 
         if (alreadyHas) {
             throw new ResponseStatusException(
@@ -195,7 +200,7 @@ public class CustomerCouponService {
         CustomerCoupon cc = CustomerCoupon.builder()
                 .studioId(studioId)
                 .couponId(couponId)
-                .customerId(customerId)
+                .customerId(customerUserId)   // ✅ 고객 User.id 저장
                 .build();
 
         customerCouponRepository.save(cc);
@@ -206,10 +211,9 @@ public class CustomerCouponService {
     // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     public byte countAvailableCouponsForCurrentCustomerUser(UUID userId) {
-        // 1) user → customerId
+        // 1) user → customerId (=userId)
         UUID customerId = resolveCustomerIdForUser(userId);
 
-        // 2) shu customer uchun barcha CustomerCoupon
         var list = customerCouponRepository
                 .findAllByCustomerIdAndDeletedAtIsNull(customerId);
 
@@ -254,6 +258,7 @@ public class CustomerCouponService {
 
     // ----------------------------------------------------------------------
     // HELPER: userId → customerId 변환
+    //   여기서의 customerId = User.id (다만 CustomerDetail 이 존재하는지 검증만)
     // ----------------------------------------------------------------------
     private UUID resolveCustomerIdForUser(UUID userId) {
         var page1 = PageRequest.of(0, 1);
@@ -270,18 +275,18 @@ public class CustomerCouponService {
             );
         }
 
-        return customerOpt.get().getId();
+        // 🔥 중요: CustomerDetail.id 가 아니라 userId 를 반환
+        return userId;
     }
 
     // ----------------------------------------------------------------------
     // MAPPER: CustomerCoupon → CustomerCouponRes
     // ----------------------------------------------------------------------
     private CustomerCouponRes toCustomerCouponRes(CustomerCoupon cc) {
-        // CustomerCoupon ↔ Coupon ID 기반 연결
         Coupon coupon = couponRepository.findByIdAndDeletedAtIsNull(cc.getCouponId())
-                .orElse(null);  // 쿠폰이 soft delete 되었을 수도 있음
+                .orElse(null);
 
-        Instant issuedAt = cc.getCreatedAt();  // 발급 시각 = CustomerCoupon.createdAt
+        Instant issuedAt = cc.getCreatedAt();
         Instant usedDateInstant = null;
         if (coupon != null && coupon.getUsedDate() != null) {
             usedDateInstant = coupon.getUsedDate()

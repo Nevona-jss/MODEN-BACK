@@ -1,5 +1,6 @@
 package com.moden.modenapi.modules.reservation.dto;
 
+import com.moden.modenapi.common.enums.ConsultationStatus;
 import com.moden.modenapi.common.enums.ReservationStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -15,8 +16,18 @@ public record ReservationUpdateRequest(
         @Schema(description = "디자이너 ID (UUID)")
         UUID designerId,
 
-        @Schema(description = "서비스 ID (UUID)")
-        UUID serviceId,
+        @Schema(description = "선택된 서비스 ID 목록")
+        java.util.List<UUID> serviceIds,
+
+
+        @Schema(description = "consultation ID (UUID)", requiredMode = Schema.RequiredMode.REQUIRED)
+        UUID consultationId,
+
+        @Schema(
+                description = "상담  상태 (PENDING, COMPLETED 등)",
+                implementation = ConsultationStatus.class
+        )
+        ConsultationStatus consultationStatus,
 
         @Schema(description = "예약 날짜")
         LocalDate reservationDate,

@@ -8,11 +8,13 @@ import java.util.UUID;
 
 public record DesignerResponse(
         UUID userId,
-        String idForLogin,    // DS-XXXXX-12345
-        String fullName,      // ✅ USER.fullName
-        String phone,         // ✅ USER.phone
-        Position position,    // DESINGER / MANAGER ...
-        DesignerStatus status,// WORKING / LEAVE ...
-        List<Weekday> daysOff,// 쉬는 요일 리스트
+        UUID ownerUserId,
+        String idForLogin,
+        String fullName,
+        String phone,
+        Position position,
+        String role,
+        DesignerStatus status,
+        List<Weekday> daysOff,
         List<String> portfolio
 ) {}
